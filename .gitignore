@@ -1,0 +1,27 @@
+# Rust
+backend/target/
+*.rs.bk
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+*.db
+*.db-journal
+
+# Manus specific
+frontend/client/public/__manus__/
+frontend/client/src/components/ManusDialog.tsx
+frontend/client/src/components/Map.tsx

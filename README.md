@@ -1,74 +1,177 @@
-# QuantRust: A Professional A-Share Quantitative Trading Platform
+# QuantRust - A股量化交易平台
 
-## 1. Project Overview
+<p align="center">
+  <strong>🚀 高性能 Rust 后端 + React 前端的开源量化交易工具</strong>
+</p>
 
-**QuantRust** is a high-performance, professional-grade quantitative trading platform designed for the A-share market. It is built with a modern technology stack, featuring a **Rust-based backend** for ultimate performance and safety, and a **React-based frontend** for a rich, interactive user experience. The platform is designed to cater to individual quantitative traders, small investment teams, and finance students.
+<p align="center">
+  <img src="https://img.shields.io/badge/Backend-Rust-orange?style=flat-square" />
+  <img src="https://img.shields.io/badge/Frontend-React%2019-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/Database-SQLite-green?style=flat-square" />
+  <img src="https://img.shields.io/badge/Data-东方财富API-red?style=flat-square" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" />
+</p>
 
-This document outlines the complete design of the QuantRust platform, covering product goals, feature specifications, UI/UX design, system architecture, and technical implementation details.
+---
 
-## 2. Product & Feature Design
+## 功能特性
 
-The core philosophy is to provide a seamless, end-to-end experience for the entire lifecycle of a quantitative strategy, from initial idea to live trading.
+| 模块 | 功能 | 状态 |
+|------|------|------|
+| 📊 市场总览 | 大盘指数、涨跌统计、热门板块 | ✅ |
+| 🔥 热点监测 | 热度评分、成交额排名、资金流入 | ✅ |
+| ⚡ 异动检测 | 量能突增、急速拉升/下跌、涨跌停 | ✅ |
+| 📈 板块行情 | 行业板块涨跌、领涨股、涨跌家数 | ✅ |
+| 💰 资金流向 | 主力/超大/大/中/小单净流入 | ✅ |
+| 🔴 涨停监控 | 涨停股列表、封单量、换手率 | ✅ |
+| ⭐ 自选股 | 自定义股票关注列表 | ✅ |
+| 🧪 策略回测 | 双均线策略、净值曲线、KPI分析 | ✅ |
+| 🔌 WebSocket | 实时数据推送 | ✅ |
+| 🎨 Demo模式 | 无后端时自动展示模拟数据 | ✅ |
 
-**Key Features (MVP):**
-- **Web-based IDE**: A powerful, browser-based code editor for developing trading strategies in Python.
-- **High-Performance Backtesting**: A robust backtesting engine supporting both vectorized and event-driven modes to accurately evaluate strategy performance.
-- **Real-time Paper Trading**: A realistic simulation environment connected to live market data to test strategies without financial risk.
-- **Interactive Dashboard**: A TradingView-style interface for market data visualization, account monitoring, and trade execution.
+## 快速开始
 
-> For a detailed breakdown of user stories, functional requirements, and the product roadmap, please refer to the **[Product Requirements Document](./docs/product_requirements.md)**.
+### 方式一：Docker 一键部署（推荐）
 
-## 3. UI/UX Design
+```bash
+git clone https://github.com/xigpz/quantrust.git
+cd quantrust
+docker-compose up -d
+```
 
-The user interface is designed to be intuitive, data-rich, and highly responsive, drawing inspiration from leading platforms like TradingView and QMT. It will feature a dark theme to reduce eye strain during long trading sessions and a modular layout that users can customize.
+访问 http://localhost:3000 即可使用。
 
-### Main Interface Layout
+### 方式二：手动编译
 
-The main dashboard is organized into logical sections for efficient workflow:
-1.  **Top Navigation**: Quick access to all major modules.
-2.  **Chart Area**: The central component for market analysis.
-3.  **Watchlist & Order Book**: Real-time market overview.
-4.  **Account & Order Management**: Panels for tracking positions, orders, and system alerts.
+**启动后端：**
 
-![UI Layout Wireframe](./docs/diagrams/ui_layout.png)
+```bash
+cd backend
+cargo build --release
+RUST_LOG=quantrust_server=info cargo run --release
+# 后端运行在 http://localhost:8080
+```
 
-## 4. System Architecture
+**启动前端（新终端）：**
 
-The backend is built on a Rust-based, event-driven microservices architecture. This design ensures high throughput, low latency, and excellent scalability, which are critical for financial trading systems.
+```bash
+cd frontend
+pnpm install
+pnpm dev
+# 前端运行在 http://localhost:3000
+```
 
-![System Architecture Diagram](./docs/diagrams/architecture.png)
+> 详细安装指南请参阅 [本地运行文档](./docs/LOCAL_SETUP.md)
 
-**Core Principles:**
-- **Performance & Safety**: Leveraging Rust to prevent common programming errors and achieve C-like performance.
-- **Modularity**: Services are decoupled and communicate asynchronously via a NATS message queue.
-- **Scalability**: Each service can be scaled independently based on its load.
+## 技术栈
 
-> For a deep dive into the technology stack, microservice breakdown, and database schema, see the **[Backend System Architecture Design Document](./docs/backend_architecture.md)**.
+### 后端 (Rust)
 
-### Rust Module Structure
+| 组件 | 技术 | 说明 |
+|------|------|------|
+| Web 框架 | Axum + Tokio | 异步高性能 HTTP 服务 |
+| 数据库 | SQLite (rusqlite) | 零配置嵌入式数据库 |
+| 数据源 | 东方财富 API | 免费实时 A 股行情 |
+| 序列化 | Serde + serde_json | 高效 JSON 处理 |
+| WebSocket | tokio-tungstenite | 实时数据推送 |
 
-The backend codebase is organized as a Cargo Workspace, promoting code reuse and clear separation of concerns.
+### 前端 (React)
 
-![Rust Modules Diagram](./docs/diagrams/rust_modules.png)
+| 组件 | 技术 | 说明 |
+|------|------|------|
+| 框架 | React 19 + TypeScript | 类型安全的 UI 开发 |
+| 样式 | Tailwind CSS 4 | 原子化 CSS |
+| 图表 | Recharts | 数据可视化 |
+| UI 库 | shadcn/ui | 高质量组件库 |
+| 路由 | Wouter | 轻量级路由 |
 
-## 5. Dataflow & Real-time Monitoring
+## 项目结构
 
-### Event-Driven Dataflow
+```
+quantrust/
+├── backend/                 # Rust 后端
+│   ├── Cargo.toml
+│   ├── Dockerfile
+│   └── src/
+│       ├── main.rs          # 入口 + 定时扫描
+│       ├── api/             # HTTP API 路由
+│       │   ├── mod.rs
+│       │   └── routes.rs    # RESTful 端点
+│       ├── data/            # 数据源适配器
+│       │   ├── mod.rs
+│       │   ├── eastmoney.rs # 东方财富 API
+│       │   └── provider.rs  # 数据提供者抽象
+│       ├── db/              # 数据库
+│       │   └── mod.rs       # SQLite 初始化
+│       ├── models/          # 数据模型
+│       │   ├── stock.rs     # 股票行情
+│       │   ├── alert.rs     # 告警
+│       │   └── strategy.rs  # 策略
+│       ├── services/        # 业务逻辑
+│       │   ├── anomaly.rs   # 异动检测引擎
+│       │   ├── hot_stocks.rs# 热点排名引擎
+│       │   ├── scanner.rs   # 市场扫描器
+│       │   └── backtest.rs  # 回测引擎
+│       └── ws/              # WebSocket
+│           └── mod.rs
+├── frontend/                # React 前端
+│   └── client/src/
+│       ├── pages/
+│       │   └── Dashboard.tsx
+│       ├── components/
+│       │   ├── MarketBar.tsx
+│       │   ├── Sidebar.tsx
+│       │   └── panels/      # 功能面板
+│       └── hooks/
+│           ├── useMarketData.ts
+│           └── mockData.ts
+├── docs/                    # 设计文档
+│   ├── DESIGN_PROPOSAL.md   # 设计方案总纲
+│   ├── product_requirements.md
+│   ├── backend_architecture.md
+│   ├── api_design.md
+│   ├── database_schema.md
+│   ├── development_roadmap.md
+│   └── LOCAL_SETUP.md       # 本地运行指南
+├── docker-compose.yml
+└── README.md
+```
 
-The system operates on a reactive data flow model. Market data, trading signals, and order statuses are propagated through the system as events, ensuring consistency and resilience.
+## API 接口
 
-![Event-Driven Dataflow Diagram](./docs/diagrams/dataflow.png)
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/health` | GET | 健康检查 |
+| `/api/market/overview` | GET | 市场概览 |
+| `/api/quotes` | GET | 全市场行情 |
+| `/api/hot-stocks` | GET | 热点股票 |
+| `/api/anomalies` | GET | 异动检测 |
+| `/api/sectors` | GET | 板块行情 |
+| `/api/money-flow` | GET | 资金流向 |
+| `/api/limit-up` | GET | 涨停监控 |
+| `/api/candles/:symbol` | GET | K线数据 |
+| `/api/backtest` | POST | 运行回测 |
+| `/api/search` | GET | 股票搜索 |
+| `/ws` | WebSocket | 实时推送 |
 
-### Observability
+## 设计文档
 
-A comprehensive monitoring stack (Prometheus, Grafana, Loki) is integrated to provide deep insights into the system's health and performance in real-time.
+本项目包含完整的设计文档，覆盖产品、架构、数据库、API 等各个维度：
 
-![Monitoring Architecture Diagram](./docs/diagrams/monitoring_architecture.png)
+- [设计方案总纲](./docs/DESIGN_PROPOSAL.md)
+- [产品需求文档](./docs/product_requirements.md)
+- [用户故事与用例](./docs/user_stories_and_use_cases.md)
+- [后端架构设计](./docs/backend_architecture.md)
+- [API 设计](./docs/api_design.md)
+- [数据库 Schema](./docs/database_schema.md)
+- [数据流与监控方案](./docs/dataflow_monitoring.md)
+- [开发路线图](./docs/development_roadmap.md)
+- [本地运行指南](./docs/LOCAL_SETUP.md)
 
-> For specifics on event schemas, data pipelines, and key performance indicators (KPIs) for monitoring, please consult the **[Dataflow & Monitoring Design Document](./docs/dataflow_monitoring.md)**.
+## 许可证
 
-## 6. Project Structure
+MIT License
 
-The repository is organized into distinct directories for the frontend, backend services, documentation, and deployment scripts.
+---
 
-![Project Directory Structure](./docs/diagrams/project_structure.png)
+> **免责声明**: 本项目仅供学习和研究使用，不构成任何投资建议。量化交易存在风险，请谨慎使用。

@@ -1,0 +1,49 @@
+[package]
+name = "quantrust-server"
+version = "0.1.0"
+edition = "2021"
+description = "QuantRust - A-Share Quantitative Trading Platform Backend"
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["ws", "macros"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-cron-scheduler = "0.13"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# HTTP client for data fetching
+reqwest = { version = "0.12", features = ["json"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# JWT auth
+jsonwebtoken = "9"
+
+# Password hashing
+bcrypt = "0.16"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Futures
+futures = "0.3"
