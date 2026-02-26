@@ -180,13 +180,13 @@ websocat ws://localhost:8080/ws
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `VITE_API_BASE` | `http://localhost:8080` | 后端 API 地址 |
+| `VITE_API_BASE` | `（空）` | 后端 API 地址（留空则使用 Vite 代理） |
 
-在前端项目根目录创建 `.env.local` 文件：
-
-```env
-VITE_API_BASE=http://localhost:8080
-```
+> **本地开发无需设置** `VITE_API_BASE`，Vite 已配置代理自动转发。
+> 生产部署时才需要在 `.env.local` 中设置：
+> ```env
+> VITE_API_BASE=http://your-backend-host:8080
+> ```
 
 ---
 
@@ -233,11 +233,11 @@ sudo dnf install gcc openssl-devel
 
 ### Q: 前端页面空白，控制台报 CORS 错误
 
-**A:** 确保后端已启动。后端默认配置了 CORS 允许所有来源。如果使用 Docker 部署则不会有此问题（nginx 代理）。
+**A:** 确保后端已启动。前端 Vite 开发服务器已配置 API 代理（`/api/*` → `localhost:8080`），本地开发不会有 CORS 问题。
 
-### Q: 非交易时段看不到数据
+### Q: 非交易时段数据是否正常？
 
-**A:** 这是正常现象。东方财富 API 在非交易时段可能返回空数据。前端会自动切换到 Demo 模式展示模拟数据。
+**A:** 正常。东方财富 API 在非交易时段返回最新收盘价数据，所有功能均可正常使用。前端底部状态栏会显示 "Demo 模式" 仅当后端未启动时才出现。
 
 ### Q: Docker 构建很慢
 

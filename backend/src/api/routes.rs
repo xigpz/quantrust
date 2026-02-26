@@ -26,8 +26,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/market/overview", get(get_market_overview))
         // 行情数据
         .route("/api/quotes", get(get_quotes))
-        .route("/api/quotes/:symbol", get(get_stock_detail))
-        .route("/api/candles/:symbol", get(get_candles))
+        .route("/api/quotes/{symbol}", get(get_stock_detail))
+        .route("/api/candles/{symbol}", get(get_candles))
         // 热点股票
         .route("/api/hot-stocks", get(get_hot_stocks))
         // 异动检测
@@ -41,7 +41,7 @@ pub fn create_router(state: AppState) -> Router {
         // 自选股
         .route("/api/watchlist", get(get_watchlist))
         .route("/api/watchlist", post(add_watchlist))
-        .route("/api/watchlist/:symbol", axum::routing::delete(remove_watchlist))
+        .route("/api/watchlist/{symbol}", axum::routing::delete(remove_watchlist))
         // 回测
         .route("/api/backtest", post(run_backtest))
         .route("/api/backtest/history", get(get_backtest_history))

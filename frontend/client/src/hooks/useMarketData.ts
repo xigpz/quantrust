@@ -4,8 +4,11 @@ import {
   generateMockAnomalies, generateMockSectors, generateMockMoneyFlow, generateMockLimitUp,
 } from './mockData';
 
-// API base URL - configurable for local dev
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
+// API base URL
+// - In local dev: Vite proxies /api -> http://localhost:8080 (no CORS issues)
+// - In production: set VITE_API_BASE to your backend URL
+// - When VITE_API_BASE is empty, use relative path (works with Vite proxy)
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 // Track if backend is available
 let backendAvailable: boolean | null = null;
@@ -138,8 +141,10 @@ export interface HotStock {
   volume: number;
   turnover: number;
   turnover_rate: number;
-  hot_score: number;
+  hot_score: number;   // backend field
+  score?: number;      // alias for compatibility
   hot_reason: string;
+  reason?: string;     // alias for compatibility
   timestamp: string;
 }
 

@@ -6,7 +6,7 @@ mod services;
 mod ws;
 
 use std::sync::Arc;
-use axum::Router;
+use axum::{Router, Json, routing::get};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -69,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers(Any);
 
     let app = Router::new()
+        .route("/api/health", get(health_check))
         .merge(create_router(state.clone()))
         .route("/ws", axum::routing::get(ws::ws_handler).with_state(state))
         .layer(cors)
@@ -83,4 +84,13 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+async fn health_check() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "service": "quantrust-server",
+        "version": "0.1.0",
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    }))
 }

@@ -25,3 +25,6 @@ Thumbs.db
 frontend/client/public/__manus__/
 frontend/client/src/components/ManusDialog.tsx
 frontend/client/src/components/Map.tsx
+*.db-shm
+*.db-wal
+*.db-journal
