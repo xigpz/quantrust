@@ -2,13 +2,94 @@
  * HotStocksPanel - 热点股票监测面板
  * Design: 暗夜终端 - 紧凑数据表格，热度评分可视化
  */
-import { useHotStocks, formatPrice, formatPercent, formatNumber, getChangeColor } from '@/hooks/useMarketData';
+import { useEffect, useState } from 'react';
+import { useHotStocksPaged, formatPrice, formatPercent, formatNumber, getChangeColor } from '@/hooks/useMarketData';
 import { Flame, RefreshCw } from 'lucide-react';
 import { useStockClick } from '@/pages/Dashboard';
 
+type SortKey = 'name' | 'price' | 'change_pct' | 'turnover' | 'turnover_rate' | 'hot_score';
+type SortDir = 'asc' | 'desc';
+
 export default function HotStocksPanel() {
-  const { data: hotStocks, loading, refetch } = useHotStocks();
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  const [items, setItems] = useState<any[]>([]);
+  const [lastPageSize, setLastPageSize] = useState<number>(0);
+
+  const { data: hotStocks, loading, refetch } = useHotStocksPaged(page, PAGE_SIZE);
   const { openStock } = useStockClick();
+
+  const [sortKey, setSortKey] = useState<SortKey>('hot_score');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  useEffect(() => {
+    const list = hotStocks ?? [];
+    setLastPageSize(list.length);
+    if (page === 1) {
+      setItems(list);
+      return;
+    }
+    if (list.length === 0) return;
+    setItems((prev) => {
+      const seen = new Set(prev.map((x: any) => x.symbol));
+      const next = [...prev];
+      for (const x of list as any[]) {
+        if (!seen.has(x.symbol)) {
+          next.push(x);
+          seen.add(x.symbol);
+        }
+      }
+      return next;
+    });
+  }, [hotStocks, page]);
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const sorted = (items ?? []).slice().sort((a, b) => {
+    let av: number | string = 0;
+    let bv: number | string = 0;
+    switch (sortKey) {
+      case 'name':
+        av = a.name;
+        bv = b.name;
+        break;
+      case 'price':
+        av = a.price;
+        bv = b.price;
+        break;
+      case 'change_pct':
+        av = a.change_pct;
+        bv = b.change_pct;
+        break;
+      case 'turnover':
+        av = a.turnover;
+        bv = b.turnover;
+        break;
+      case 'turnover_rate':
+        av = a.turnover_rate;
+        bv = b.turnover_rate;
+        break;
+      case 'hot_score':
+        av = a.hot_score;
+        bv = b.hot_score;
+        break;
+    }
+    if (typeof av === 'string' && typeof bv === 'string') {
+      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    }
+    const na = Number(av) || 0;
+    const nb = Number(bv) || 0;
+    return sortDir === 'asc' ? na - nb : nb - na;
+  });
+
+  const hasMore = lastPageSize === PAGE_SIZE;
 
   return (
     <div className="flex flex-col">
@@ -18,28 +99,102 @@ export default function HotStocksPanel() {
           <Flame className="w-4 h-4 text-orange-400" />
           <h2 className="text-sm font-semibold">热点股票</h2>
           <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            {hotStocks?.length || 0} 只
+            {items?.length || 0} 只
           </span>
         </div>
-        <button onClick={refetch} className="text-muted-foreground hover:text-foreground transition-colors">
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={!hasMore || loading}
+            onClick={() => setPage((p) => p + 1)}
+            className="text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            title="加载更多"
+          >
+            加载更多
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPage(1);
+              setItems([]);
+              refetch();
+            }}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            title="刷新"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {/* Table */}
       <table className="w-full text-xs">
         <thead className="sticky top-[41px] bg-card z-10">
           <tr className="text-muted-foreground border-b border-border">
-            <th className="text-left py-2 px-3 font-medium">股票</th>
-            <th className="text-right py-2 px-2 font-medium">最新价</th>
-            <th className="text-right py-2 px-2 font-medium">涨跌幅</th>
-            <th className="text-right py-2 px-2 font-medium">成交额</th>
-            <th className="text-right py-2 px-2 font-medium">换手率</th>
-            <th className="text-right py-2 px-3 font-medium">热度</th>
+            <th className="text-left py-2 px-3 font-medium">
+              <button
+                type="button"
+                onClick={() => handleSort('name')}
+                className="inline-flex items-center gap-0.5 hover:text-foreground"
+              >
+                股票
+                {sortKey === 'name' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            </th>
+            <th className="text-right py-2 px-2 font-medium">
+              <button
+                type="button"
+                onClick={() => handleSort('price')}
+                className="inline-flex items-center gap-0.5 hover:text-foreground"
+              >
+                最新价
+                {sortKey === 'price' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            </th>
+            <th className="text-right py-2 px-2 font-medium">
+              <button
+                type="button"
+                onClick={() => handleSort('change_pct')}
+                className="inline-flex items-center gap-0.5 hover:text-foreground"
+              >
+                涨跌幅
+                {sortKey === 'change_pct' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            </th>
+            <th className="text-right py-2 px-2 font-medium">
+              <button
+                type="button"
+                onClick={() => handleSort('turnover')}
+                className="inline-flex items-center gap-0.5 hover:text-foreground"
+              >
+                成交额
+                {sortKey === 'turnover' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            </th>
+            <th className="text-right py-2 px-2 font-medium">
+              <button
+                type="button"
+                onClick={() => handleSort('turnover_rate')}
+                className="inline-flex items-center gap-0.5 hover:text-foreground"
+              >
+                换手率
+                {sortKey === 'turnover_rate' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            </th>
+            <th className="text-right py-2 px-3 font-medium">
+              <button
+                type="button"
+                onClick={() => handleSort('hot_score')}
+                className="inline-flex items-center gap-0.5 hover:text-foreground"
+              >
+                热度
+                {sortKey === 'hot_score' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {hotStocks?.map((stock) => (
+          {sorted.map((stock) => (
             <tr
               key={stock.symbol}
               onClick={() => openStock(stock.symbol, stock.name)}
@@ -85,7 +240,7 @@ export default function HotStocksPanel() {
               </td>
             </tr>
           ))}
-          {(!hotStocks || hotStocks.length === 0) && !loading && (
+          {(!items || items.length === 0) && !loading && (
             <tr>
               <td colSpan={6} className="text-center py-8 text-muted-foreground">
                 暂无数据（非交易时段）

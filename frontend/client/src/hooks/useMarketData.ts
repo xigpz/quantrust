@@ -149,7 +149,12 @@ export interface HotStock {
 }
 
 export function useHotStocks() {
-  return useApi<HotStock[]>('/api/hot-stocks', generateMockHotStocks, 5000);
+  return useApi<HotStock[]>('/api/hot-stocks?page=1&page_size=50', generateMockHotStocks, 5000);
+}
+
+export function useHotStocksPaged(page = 1, pageSize = 50) {
+  const interval = page === 1 ? 5000 : undefined;
+  return useApi<HotStock[]>(`/api/hot-stocks?page=${page}&page_size=${pageSize}`, generateMockHotStocks, interval);
 }
 
 // Anomaly Stocks
@@ -305,6 +310,22 @@ export function useLimitUp() {
 // Watchlist
 export function useWatchlist() {
   return useApi<any[]>('/api/watchlist', undefined, 30000);
+}
+
+export async function addToWatchlist(params: { symbol: string; name: string; group_name?: string }): Promise<ApiResponse<string>> {
+  const res = await fetch(`${API_BASE}/api/watchlist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return res.json();
+}
+
+export async function removeFromWatchlist(symbol: string): Promise<ApiResponse<string>> {
+  const res = await fetch(`${API_BASE}/api/watchlist/${encodeURIComponent(symbol)}`, {
+    method: 'DELETE',
+  });
+  return res.json();
 }
 
 // Format helpers

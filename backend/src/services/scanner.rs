@@ -54,16 +54,35 @@ impl MarketScanner {
     pub async fn scan(&self) -> Result<()> {
         tracing::info!("Starting market scan...");
 
-        // 1. 获取全市场行情 (前500只活跃股票)
-        let quotes = self.provider.get_realtime_quotes(1, 500).await
-            .unwrap_or_else(|e| {
-                tracing::warn!("Failed to fetch quotes: {}", e);
-                Vec::new()
-            });
+        // 1. 获取全市场行情
+        //
+        // A股数量已超过 5000，单页会不全；这里按页拉取并合并（最多 10000 条）。
+        let page_size = 5000;
+        let mut quotes = Vec::new();
+        for page in 1..=2 {
+            match self.provider.get_realtime_quotes(page, page_size).await {
+                Ok(mut q) => {
+                    if q.is_empty() {
+                        break;
+                    }
+                    quotes.append(&mut q);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to fetch quotes page {}: {}", page, e);
+                    break;
+                }
+            }
+        }
+
+        // 去重（极少数情况下分页可能出现重复）
+        if quotes.len() > 1 {
+            quotes.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+            quotes.dedup_by(|a, b| a.symbol == b.symbol);
+        }
 
         if !quotes.is_empty() {
             // 2. 计算热点股票
-            let hot_stocks = self.hot_ranker.rank(&quotes, 50);
+            let hot_stocks = self.hot_ranker.rank(&quotes, 200);
             *self.cache.hot_stocks.write().await = hot_stocks;
 
             // 3. 检测异动

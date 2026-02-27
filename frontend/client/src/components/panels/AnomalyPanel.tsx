@@ -51,6 +51,17 @@ export default function AnomalyPanel() {
   const { data: anomalies, loading, refetch } = useAnomalies();
   const { openStock } = useStockClick();
 
+  const formatAnomalyTime = (ts?: string): string => {
+    if (!ts) return '';
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
   return (
     <div className="flex flex-col">
       {/* Header */}
@@ -96,6 +107,11 @@ export default function AnomalyPanel() {
                   {getAnomalyLabel(item.anomaly_type)}
                 </span>
                 <span className="text-[10px] text-muted-foreground">{item.description}</span>
+                {item.timestamp && (
+                  <span className="text-[10px] text-muted-foreground font-mono-data">
+                    {formatAnomalyTime(item.timestamp)}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-10 h-1 bg-muted rounded-full overflow-hidden">
