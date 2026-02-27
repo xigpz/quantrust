@@ -155,9 +155,19 @@ async fn get_candles(
 /// 获取热点股票
 async fn get_hot_stocks(
     State(state): State<AppState>,
+    Query(params): Query<PaginationParams>,
 ) -> Json<ApiResponse<Vec<HotStock>>> {
     let hot = state.cache.hot_stocks.read().await.clone();
-    ok_response(hot)
+    let page = params.page.unwrap_or(1) as usize;
+    let page_size = params.page_size.unwrap_or(50) as usize;
+    let start = (page.saturating_sub(1)) * page_size;
+    let end = (start + page_size).min(hot.len());
+
+    if start < hot.len() {
+        ok_response(hot[start..end].to_vec())
+    } else {
+        ok_response(vec![])
+    }
 }
 
 /// 获取异动股票

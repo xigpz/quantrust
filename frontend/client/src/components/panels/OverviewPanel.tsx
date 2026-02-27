@@ -2,21 +2,28 @@
  * OverviewPanel - 市场总览面板
  * Design: 暗夜终端 - 综合仪表盘，指数卡片 + 行情列表
  */
+import { useState } from 'react';
 import { useMarketOverview, useQuotes, useSectors, formatPrice, formatPercent, formatNumber, getChangeColor } from '@/hooks/useMarketData';
 import { LayoutDashboard, TrendingUp, TrendingDown, BarChart3, Activity } from 'lucide-react';
 import { useStockClick } from '@/pages/Dashboard';
 
-function IndexCard({ name, price, change, change_pct, volume, turnover }: {
-  name: string; price: number; change: number; change_pct: number; volume: number; turnover: number;
+type SortKey = 'name' | 'price' | 'change_pct' | 'turnover' | 'turnover_rate' | 'pe_ratio';
+type SortDir = 'asc' | 'desc';
+
+function IndexCard({ name, price, change, change_pct, volume, turnover, onClick }: {
+  name: string; price: number; change: number; change_pct: number; volume: number; turnover: number; onClick?: () => void;
 }) {
   const isUp = change_pct > 0;
   const isDown = change_pct < 0;
   return (
-    <div className={`rounded-lg p-3.5 panel-glow border border-border/50 ${
+    <div
+      className={`rounded-lg p-3.5 panel-glow border border-border/50 ${
       isUp ? 'bg-gradient-to-br from-red-950/60 to-red-900/30 border-red-800/30'
       : isDown ? 'bg-gradient-to-br from-green-950/60 to-green-900/30 border-green-800/30'
       : 'bg-card'
-    }`}>
+    } ${onClick ? 'cursor-pointer hover:border-primary/60 hover:shadow-lg transition-colors' : ''}`}
+      onClick={onClick}
+    >
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs text-gray-400 font-medium">{name}</span>
         {isUp ? <TrendingUp className="w-3.5 h-3.5 text-red-400" /> : isDown ? <TrendingDown className="w-3.5 h-3.5 text-green-400" /> : null}
@@ -44,6 +51,55 @@ export default function OverviewPanel() {
   const { data: sectors } = useSectors();
   const { openStock } = useStockClick();
 
+  const [sortKey, setSortKey] = useState<SortKey>('change_pct');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const sortedQuotes = (quotes ?? []).slice().sort((a, b) => {
+    let av: number | string = 0;
+    let bv: number | string = 0;
+    switch (sortKey) {
+      case 'name':
+        av = a.name;
+        bv = b.name;
+        break;
+      case 'price':
+        av = a.price;
+        bv = b.price;
+        break;
+      case 'change_pct':
+        av = a.change_pct;
+        bv = b.change_pct;
+        break;
+      case 'turnover':
+        av = a.turnover;
+        bv = b.turnover;
+        break;
+      case 'turnover_rate':
+        av = a.turnover_rate;
+        bv = b.turnover_rate;
+        break;
+      case 'pe_ratio':
+        av = a.pe_ratio;
+        bv = b.pe_ratio;
+        break;
+    }
+    if (typeof av === 'string' && typeof bv === 'string') {
+      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    }
+    const na = Number(av) || 0;
+    const nb = Number(bv) || 0;
+    return sortDir === 'asc' ? na - nb : nb - na;
+  });
+
   return (
     <div className="p-4 space-y-4">
       {/* Header */}
@@ -55,9 +111,18 @@ export default function OverviewPanel() {
       {/* Index Cards */}
       {overview && (
         <div className="grid grid-cols-3 gap-3">
-          <IndexCard {...overview.sh_index} />
-          <IndexCard {...overview.sz_index} />
-          <IndexCard {...overview.cyb_index} />
+          <IndexCard
+            {...overview.sh_index}
+            onClick={() => openStock(`${overview.sh_index.code}.SH`, overview.sh_index.name)}
+          />
+          <IndexCard
+            {...overview.sz_index}
+            onClick={() => openStock(`${overview.sz_index.code}.SZ`, overview.sz_index.name)}
+          />
+          <IndexCard
+            {...overview.cyb_index}
+            onClick={() => openStock(`${overview.cyb_index.code}.SZ`, overview.cyb_index.name)}
+          />
         </div>
       )}
 
@@ -108,16 +173,70 @@ export default function OverviewPanel() {
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-card/95 z-10">
             <tr className="text-muted-foreground border-b border-border">
-              <th className="text-left py-1.5 px-2 font-medium">股票</th>
-              <th className="text-right py-1.5 px-2 font-medium">最新价</th>
-              <th className="text-right py-1.5 px-2 font-medium">涨跌幅</th>
-              <th className="text-right py-1.5 px-2 font-medium">成交额</th>
-              <th className="text-right py-1.5 px-2 font-medium">换手率</th>
-              <th className="text-right py-1.5 px-2 font-medium">市盈率</th>
+              <th className="text-left py-1.5 px-2 font-medium">
+                <button
+                  type="button"
+                  onClick={() => handleSort('name')}
+                  className="inline-flex items-center gap-0.5 hover:text-foreground"
+                >
+                  股票
+                  {sortKey === 'name' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </button>
+              </th>
+              <th className="text-right py-1.5 px-2 font-medium">
+                <button
+                  type="button"
+                  onClick={() => handleSort('price')}
+                  className="inline-flex items-center gap-0.5 hover:text-foreground"
+                >
+                  最新价
+                  {sortKey === 'price' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </button>
+              </th>
+              <th className="text-right py-1.5 px-2 font-medium">
+                <button
+                  type="button"
+                  onClick={() => handleSort('change_pct')}
+                  className="inline-flex items-center gap-0.5 hover:text-foreground"
+                >
+                  涨跌幅
+                  {sortKey === 'change_pct' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </button>
+              </th>
+              <th className="text-right py-1.5 px-2 font-medium">
+                <button
+                  type="button"
+                  onClick={() => handleSort('turnover')}
+                  className="inline-flex items-center gap-0.5 hover:text-foreground"
+                >
+                  成交额
+                  {sortKey === 'turnover' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </button>
+              </th>
+              <th className="text-right py-1.5 px-2 font-medium">
+                <button
+                  type="button"
+                  onClick={() => handleSort('turnover_rate')}
+                  className="inline-flex items-center gap-0.5 hover:text-foreground"
+                >
+                  换手率
+                  {sortKey === 'turnover_rate' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </button>
+              </th>
+              <th className="text-right py-1.5 px-2 font-medium">
+                <button
+                  type="button"
+                  onClick={() => handleSort('pe_ratio')}
+                  className="inline-flex items-center gap-0.5 hover:text-foreground"
+                >
+                  市盈率
+                  {sortKey === 'pe_ratio' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {quotes?.map((q) => (
+            {sortedQuotes.map((q) => (
               <tr
                 key={q.symbol}
                 onClick={() => openStock(q.symbol, q.name)}

@@ -390,6 +390,7 @@ impl EastMoneyApi {
     /// 获取大盘指数
     /// 使用 push2delay 域名
     pub async fn get_market_overview(&self) -> Result<MarketOverview> {
+        // 1. 先获取三大指数的详细行情
         let indices = vec![
             ("1.000001", "上证指数"),
             ("0.399001", "深证成指"),
@@ -432,24 +433,53 @@ impl EastMoneyApi {
             }
         }
 
-        // 统计涨跌家数
+        // 2. 统计涨跌平家数 + 涨跌停家数
+        //
+        // 这里直接使用东方财富提供的列表接口来统计，与官网口径保持一致：
+        // - 同样的 fs 过滤条件
+        // - 同样的 pz（5000）配置
         let stats_url = "https://82.push2delay.eastmoney.com/api/qt/clist/get?\
             pn=1&pz=5000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281\
             &fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048\
             &fields=f3";
-        
+
         let (mut up_count, mut down_count, mut flat_count, mut limit_up, mut limit_down) = (0, 0, 0, 0, 0);
-        
+
         if let Ok(stats_resp) = self.fetch_json(stats_url).await {
             if let Some(data) = stats_resp.get("data") {
                 if let Some(diff) = data.get("diff").and_then(|d| d.as_array()) {
+                    let mut total = 0_i32;
                     for item in diff {
                         let pct = item["f3"].as_f64().unwrap_or(0.0);
-                        if pct > 0.0 { up_count += 1; }
-                        else if pct < 0.0 { down_count += 1; }
-                        else { flat_count += 1; }
-                        if pct >= 9.9 { limit_up += 1; }
-                        if pct <= -9.9 { limit_down += 1; }
+                        total += 1;
+
+                        if pct > 0.0 {
+                            up_count += 1;
+                        } else if pct < 0.0 {
+                            down_count += 1;
+                        } else {
+                            flat_count += 1;
+                        }
+                        if pct >= 9.9 {
+                            limit_up += 1;
+                        }
+                        if pct <= -9.9 {
+                            limit_down += 1;
+                        }
+                    }
+
+                    // 如果返回的股票数量太少（例如收盘后接口不再返回全市场），
+                    // 则认为统计数据不可靠，统一置零，让前端显示为「—」。
+                    if total < 1000 {
+                        tracing::warn!(
+                            "Market stats seem incomplete (only {} symbols), resetting counts to 0",
+                            total
+                        );
+                        up_count = 0;
+                        down_count = 0;
+                        flat_count = 0;
+                        limit_up = 0;
+                        limit_down = 0;
                     }
                 }
             }

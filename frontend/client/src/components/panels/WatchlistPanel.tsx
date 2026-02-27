@@ -1,13 +1,15 @@
 /**
  * WatchlistPanel - 自选股面板
  */
-import { useWatchlist, formatPrice, formatPercent, getChangeColor } from '@/hooks/useMarketData';
-import { Star, RefreshCw, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { useWatchlist, removeFromWatchlist } from '@/hooks/useMarketData';
+import { Star, RefreshCw, Plus, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 
 export default function WatchlistPanel() {
   const { data: watchlist, loading, refetch } = useWatchlist();
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   return (
     <div className="flex flex-col h-full">
@@ -36,15 +38,41 @@ export default function WatchlistPanel() {
               <tr className="text-muted-foreground border-b border-border">
                 <th className="text-left py-2 px-3 font-medium">股票</th>
                 <th className="text-right py-2 px-2 font-medium">代码</th>
-                <th className="text-right py-2 px-3 font-medium">分组</th>
+                <th className="text-right py-2 px-2 font-medium">分组</th>
+                <th className="w-10 py-2 px-2 font-medium" />
               </tr>
             </thead>
             <tbody>
               {watchlist.map((item: any) => (
-                <tr key={item.id} className="border-b border-border/50 hover:bg-accent/50 transition-colors cursor-pointer">
+                <tr key={item.id} className="border-b border-border/50 hover:bg-accent/50 transition-colors">
                   <td className="py-1.5 px-3 font-medium">{item.name}</td>
                   <td className="text-right py-1.5 px-2 font-mono-data text-muted-foreground">{item.symbol}</td>
-                  <td className="text-right py-1.5 px-3 text-muted-foreground">{item.group_name}</td>
+                  <td className="text-right py-1.5 px-2 text-muted-foreground">{item.group_name}</td>
+                  <td className="text-right py-1.5 px-2">
+                    <button
+                      disabled={removingId === item.id}
+                      onClick={async () => {
+                        try {
+                          setRemovingId(item.id);
+                          const res = await removeFromWatchlist(item.symbol);
+                          if (res.success) {
+                            toast.success('已移除自选股', { description: `${item.name} (${item.symbol})` });
+                            refetch();
+                          } else {
+                            toast.error('移除自选失败', { description: res.message || '请稍后重试' });
+                          }
+                        } catch {
+                          toast.error('移除自选失败', { description: '网络异常，请检查后端服务' });
+                        } finally {
+                          setRemovingId(null);
+                        }
+                      }}
+                      className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded hover:bg-muted disabled:opacity-60"
+                      title="移除自选股"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

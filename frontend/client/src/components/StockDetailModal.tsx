@@ -9,8 +9,9 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell
 } from 'recharts';
-import { TrendingUp, TrendingDown, RefreshCw, X, ExternalLink } from 'lucide-react';
-import { formatPrice, formatPercent, formatNumber, getChangeColor } from '@/hooks/useMarketData';
+import { TrendingUp, TrendingDown, RefreshCw, X, ExternalLink, Star } from 'lucide-react';
+import { formatPrice, formatPercent, formatNumber, getChangeColor, addToWatchlist, removeFromWatchlist } from '@/hooks/useMarketData';
+import { toast } from 'sonner';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
@@ -79,36 +80,8 @@ function CandleTooltip({ active, payload }: any) {
   );
 }
 
-// 自定义蜡烛图形状
-function CandleBar(props: any) {
-  const { x, y, width, height, payload } = props;
-  if (!payload) return null;
-  const { open, close, high, low } = payload;
-  const isUp = close >= open;
-  const color = isUp ? '#ef4444' : '#22c55e';
-  const bodyTop = Math.min(open, close);
-  const bodyBottom = Math.max(open, close);
-  const scale = props.yAxisScale;
-  if (!scale) return null;
-
-  const yTop = scale(high);
-  const yBodyTop = scale(bodyTop);
-  const yBodyBottom = scale(bodyBottom);
-  const yBottom = scale(low);
-  const centerX = x + width / 2;
-  const bodyHeight = Math.max(1, yBodyBottom - yBodyTop);
-
-  return (
-    <g>
-      {/* 上影线 */}
-      <line x1={centerX} y1={yTop} x2={centerX} y2={yBodyTop} stroke={color} strokeWidth={1} />
-      {/* 实体 */}
-      <rect x={x + 1} y={yBodyTop} width={Math.max(1, width - 2)} height={bodyHeight} fill={color} />
-      {/* 下影线 */}
-      <line x1={centerX} y1={yBodyBottom} x2={centerX} y2={yBottom} stroke={color} strokeWidth={1} />
-    </g>
-  );
-}
+// 之前尝试用自定义蜡烛图形状，但在 Recharts 中难以稳定拿到 y 轴 scale，
+// 导致某些环境下 K 线实体不显示。这里先退回为更稳定的收盘价折线图。
 
 // 资金流向条形图
 function MoneyFlowBar({ label, value, maxVal }: { label: string; value: number; maxVal: number }) {
@@ -142,15 +115,18 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
   const [moneyFlow, setMoneyFlow] = useState<MoneyFlowDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<'1d' | '1w' | '1M'>('1d');
+  const [favLoading, setFavLoading] = useState(false);
+  const [isFav, setIsFav] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     if (!symbol) return;
     setLoading(true);
     try {
-      const [detailRes, candleRes, flowRes] = await Promise.allSettled([
+      const [detailRes, candleRes, flowRes, watchlistRes] = await Promise.allSettled([
         fetch(`${API_BASE}/api/quotes/${symbol}`).then(r => r.json()),
         fetch(`${API_BASE}/api/candles/${symbol}?period=${period}&count=90`).then(r => r.json()),
         fetch(`${API_BASE}/api/money-flow`).then(r => r.json()),
+        fetch(`${API_BASE}/api/watchlist`).then(r => r.json()),
       ]);
 
       if (detailRes.status === 'fulfilled' && detailRes.value.success) {
@@ -164,6 +140,13 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
         const flows: MoneyFlowDetail[] = flowRes.value.data || [];
         const found = flows.find((f: MoneyFlowDetail) => f.symbol === symbol);
         setMoneyFlow(found || null);
+      }
+      if (watchlistRes.status === 'fulfilled' && watchlistRes.value.success) {
+        const list: any[] = watchlistRes.value.data || [];
+        const exists = list.some((w) => w.symbol === symbol);
+        setIsFav(exists);
+      } else {
+        setIsFav(false);
       }
     } catch (e) {
       console.error('Failed to fetch stock detail', e);
@@ -239,6 +222,44 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
               )}
             </div>
             <div className="flex items-center gap-2">
+              {detail && (
+                <button
+                  disabled={favLoading}
+                  onClick={async () => {
+                    if (!detail) return;
+                    try {
+                      setFavLoading(true);
+                      if (isFav) {
+                        const res = await removeFromWatchlist(detail.symbol);
+                        if (res.success) {
+                          setIsFav(false);
+                          toast.success('已移除自选股', { description: `${detail.name} (${detail.symbol})` });
+                        } else {
+                          toast.error('取消自选失败', { description: res.message || '请稍后重试' });
+                        }
+                      } else {
+                        const res = await addToWatchlist({ symbol: detail.symbol, name: detail.name });
+                        if (res.success) {
+                          setIsFav(true);
+                          toast.success('已加入自选股', { description: `${detail.name} (${detail.symbol})` });
+                        } else {
+                          toast.error('加入自选股失败', { description: res.message || '请稍后重试' });
+                        }
+                      }
+                    } catch (e) {
+                      toast.error('操作自选股失败', { description: '网络异常，请检查后端服务' });
+                    } finally {
+                      setFavLoading(false);
+                    }
+                  }}
+                  className={`transition-colors p-1.5 rounded hover:bg-muted disabled:opacity-60 ${
+                    isFav ? 'text-yellow-400' : 'text-muted-foreground hover:text-yellow-300'
+                  }`}
+                  title={isFav ? '取消自选股' : '加入自选股'}
+                >
+                  <Star className={`w-4 h-4 ${isFav ? 'fill-yellow-400/90' : ''}`} />
+                </button>
+              )}
               <button
                 onClick={fetchDetail}
                 className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
@@ -287,7 +308,7 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
 
               {chartData.length > 0 ? (
                 <div>
-                  {/* Price Chart */}
+                  {/* Price Chart - 使用收盘价折线替代自定义蜡烛，保证稳定显示 */}
                   <ResponsiveContainer width="100%" height={240}>
                     <ComposedChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 45 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="oklch(1 0 0 / 5%)" />
@@ -305,15 +326,13 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
                         width={44}
                       />
                       <Tooltip content={<CandleTooltip />} />
-                      {/* 用 Bar 模拟蜡烛图（Recharts 原生不支持蜡烛图，用 Bar + 自定义形状） */}
-                      <Bar dataKey="close" shape={<CandleBar />}>
-                        {chartData.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={entry.isUp ? '#ef4444' : '#22c55e'}
-                          />
-                        ))}
-                      </Bar>
+                      <Line
+                        type="monotone"
+                        dataKey="close"
+                        stroke="#f97316"
+                        dot={false}
+                        strokeWidth={1.6}
+                      />
                     </ComposedChart>
                   </ResponsiveContainer>
 
