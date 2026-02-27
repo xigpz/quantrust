@@ -32,11 +32,13 @@ impl BacktestEngine {
         // 计算移动平均线
         let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
 
-        for i in long_period..candles.len() {
-            let short_ma: f64 = closes[i - short_period..i].iter().sum::<f64>() / short_period as f64;
-            let long_ma: f64 = closes[i - long_period..i].iter().sum::<f64>() / long_period as f64;
-            let prev_short_ma: f64 = closes[i - short_period - 1..i - 1].iter().sum::<f64>() / short_period as f64;
-            let prev_long_ma: f64 = closes[i - long_period - 1..i - 1].iter().sum::<f64>() / long_period as f64;
+        // 需要从 long_period+1 开始，确保 i-1 时也有足够数据计算前一期均线
+        let start = (long_period + 1).max(short_period + 1);
+        for i in start..candles.len() {
+            let short_ma: f64 = closes[i.saturating_sub(short_period)..i].iter().sum::<f64>() / short_period as f64;
+            let long_ma: f64 = closes[i.saturating_sub(long_period)..i].iter().sum::<f64>() / long_period as f64;
+            let prev_short_ma: f64 = closes[i.saturating_sub(short_period + 1)..i.saturating_sub(1)].iter().sum::<f64>() / short_period as f64;
+            let prev_long_ma: f64 = closes[i.saturating_sub(long_period + 1)..i.saturating_sub(1)].iter().sum::<f64>() / long_period as f64;
 
             let price = candles[i].close;
             let commission = price * params.commission_rate;

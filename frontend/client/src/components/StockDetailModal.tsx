@@ -3,7 +3,7 @@
  * Design: 暗夜终端 - 多标签详情面板，K线图 + 基本信息 + 资金流向
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -25,12 +25,13 @@ interface StockDetail {
   low: number;
   pre_close: number;
   volume: number;
-  turnover: number;
-  turnover_rate: number;
-  amplitude: number;
-  pe_ratio: number;
+  turnover: number;       // 成交额 (元)
+  turnover_rate: number; // 换手率 (%)
+  amplitude: number;     // 振幅 (%)
+  pe_ratio: number;      // 市盈率
   total_market_cap: number;
   circulating_market_cap: number;
+  timestamp?: string;
 }
 
 interface Candle {
@@ -147,12 +148,13 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
     setLoading(true);
     try {
       const [detailRes, candleRes, flowRes] = await Promise.allSettled([
-        fetch(`${API_BASE}/api/stocks/${symbol}`).then(r => r.json()),
+        fetch(`${API_BASE}/api/quotes/${symbol}`).then(r => r.json()),
         fetch(`${API_BASE}/api/candles/${symbol}?period=${period}&count=90`).then(r => r.json()),
         fetch(`${API_BASE}/api/money-flow`).then(r => r.json()),
       ]);
 
       if (detailRes.status === 'fulfilled' && detailRes.value.success) {
+        // /api/quotes/{symbol} returns StockQuote which has all the fields we need
         setDetail(detailRes.value.data);
       }
       if (candleRes.status === 'fulfilled' && candleRes.value.success) {
@@ -208,7 +210,7 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
 
   return (
     <Dialog open={!!symbol} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-3xl w-full bg-card border-border text-foreground p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-3xl w-full bg-card border-border text-foreground p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col" showCloseButton={false}>
         {/* Header */}
         <DialogHeader className="px-5 py-3.5 border-b border-border shrink-0">
           <div className="flex items-center justify-between">
@@ -240,12 +242,14 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
               <button
                 onClick={fetchDetail}
                 className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+                title="刷新"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={onClose}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+                className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-muted"
+                title="关闭"
               >
                 <X className="w-4 h-4" />
               </button>

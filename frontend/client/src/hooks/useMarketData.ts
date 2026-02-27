@@ -104,7 +104,7 @@ export interface MarketOverview {
 }
 
 export function useMarketOverview() {
-  return useApi<MarketOverview>('/api/market/overview', generateMockOverview, 15000);
+  return useApi<MarketOverview>('/api/market/overview', generateMockOverview, 3000);
 }
 
 // Stock Quote
@@ -129,7 +129,7 @@ export interface StockQuote {
 }
 
 export function useQuotes(page = 1, pageSize = 50) {
-  return useApi<StockQuote[]>(`/api/quotes?page=${page}&page_size=${pageSize}`, generateMockQuotes, 15000);
+  return useApi<StockQuote[]>(`/api/quotes?page=${page}&page_size=${pageSize}`, generateMockQuotes, 5000);
 }
 
 // Hot Stocks
@@ -149,7 +149,7 @@ export interface HotStock {
 }
 
 export function useHotStocks() {
-  return useApi<HotStock[]>('/api/hot-stocks', generateMockHotStocks, 15000);
+  return useApi<HotStock[]>('/api/hot-stocks', generateMockHotStocks, 5000);
 }
 
 // Anomaly Stocks
@@ -167,7 +167,7 @@ export interface AnomalyStock {
 }
 
 export function useAnomalies() {
-  return useApi<AnomalyStock[]>('/api/anomalies', generateMockAnomalies, 15000);
+  return useApi<AnomalyStock[]>('/api/anomalies', generateMockAnomalies, 5000);
 }
 
 // Sectors
