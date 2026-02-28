@@ -14,6 +14,7 @@ import {
   Settings,
   Sun,
   Moon,
+  Wallet,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTheme } from './ThemeContext';
@@ -38,7 +39,7 @@ function ThemeToggle() {
   );
 }
 
-export type TabId = 'overview' | 'hot' | 'anomaly' | 'sectors' | 'flow' | 'limitup' | 'watchlist' | 'backtest' | 'settings';
+export type TabId = 'overview' | 'hot' | 'anomaly' | 'sectors' | 'flow' | 'limitup' | 'watchlist' | 'backtest' | 'sim' | 'settings';
 
 interface SidebarProps {
   activeTab: TabId;
@@ -54,6 +55,7 @@ const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'limitup', label: '涨停监控', icon: <BarChart3 className="w-[18px] h-[18px]" /> },
   { id: 'watchlist', label: '自选股', icon: <Star className="w-[18px] h-[18px]" /> },
   { id: 'backtest', label: '策略回测', icon: <FlaskConical className="w-[18px] h-[18px]" /> },
+  { id: 'sim', label: '模拟交易', icon: <Wallet className="w-[18px] h-[18px]" /> },
 ];
 
 export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {

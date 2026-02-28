@@ -13,6 +13,7 @@ import MoneyFlowPanel from '@/components/panels/MoneyFlowPanel';
 import LimitUpPanel from '@/components/panels/LimitUpPanel';
 import WatchlistPanel from '@/components/panels/WatchlistPanel';
 import BacktestPanel from '@/components/panels/BacktestPanel';
+import SimTrading from './SimTrading';
 import SettingsPanel from '@/components/panels/SettingsPanel';
 import StockDetailModal from '@/components/StockDetailModal';
 import { useWebSocket } from '@/hooks/useMarketData';
@@ -33,6 +34,7 @@ const panelMap: Record<TabId, React.ComponentType> = {
   limitup: LimitUpPanel,
   watchlist: WatchlistPanel,
   backtest: BacktestPanel,
+  sim: SimTrading,
   settings: SettingsPanel,
 };
 
