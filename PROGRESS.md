@@ -16,13 +16,15 @@
 - [x] 动量API接口 /api/momentum/:symbol
 - [x] 风险控制模块 (仓位管理 + 止损止盈 + 最大回撤)
 - [x] 数据增强模块 (财务数据 + 龙虎榜 + 资金流向)
+- [x] 通知模块 (飞书 + 邮件 + 钉钉)
 - [ ] 启动服务测试
 - [ ] 前端环境准备
+- [ ] 实盘对接
 
 ## 进度记录
 
 ### 2026-02-28
-**状态**: 数据增强开发完成
+**状态**: 通知模块开发完成
 
 **今日完成**:
 - 安装 Rust 1.93.1 环境
@@ -35,6 +37,9 @@
 - **新增数据增强模块**:
   - backend/src/services/financial.rs (财务数据 + 龙虎榜)
   - backend/src/services/capital_flow.rs (资金流向)
+- **新增通知模块**:
+  - backend/src/services/notification.rs
+  - scripts/notification.py (飞书 + 邮件 + 钉钉)
 
 ### 2026-02-27
 **状态**: 项目代码结构完整
