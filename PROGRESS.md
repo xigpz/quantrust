@@ -14,21 +14,27 @@
 - [x] 编译后端成功 (92MB binary)
 - [x] 动量策略引擎 (Rust + Python)
 - [x] 动量API接口 /api/momentum/:symbol
+- [x] 风险控制模块 (仓位管理 + 止损止盈 + 最大回撤)
 - [ ] 启动服务测试
 - [ ] 前端环境准备
 
 ## 进度记录
 
 ### 2026-02-28
-**状态**: 动量策略开发中
+**状态**: 风险控制开发完成
 
 **今日完成**:
 - 安装 Rust 1.93.1 环境
 - 成功编译 QuantRust 后端
 - 开发动量策略引擎 (RSI + MACD + 成交量)
-  - Rust: backend/src/services/momentum.rs
-  - Python: scripts/momentum_strategy.py
 - 新增 API: GET /api/momentum/:symbol
+- **新增风险控制模块**:
+  - Rust: backend/src/services/risk.rs
+  - Python: scripts/risk_control.py
+  - 仓位管理 (最大仓位、单股限制)
+  - 止损止盈 (5%/15% 默认)
+  - 最大回撤告警
+  - 风控报告生成
 
 ### 2026-02-27
 **状态**: 项目代码结构完整

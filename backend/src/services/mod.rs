@@ -3,9 +3,11 @@ pub mod hot_stocks;
 pub mod backtest;
 pub mod scanner;
 pub mod momentum;
+pub mod risk;
 
 pub use anomaly::AnomalyDetector;
 pub use hot_stocks::HotStockRanker;
 pub use backtest::BacktestEngine;
 pub use scanner::MarketScanner;
 pub use momentum::{MomentumStrategy, MomentumSignal};
+pub use risk::{RiskManager, RiskConfig, RiskReport, TradeSignal, TradeType, TradeAction};
