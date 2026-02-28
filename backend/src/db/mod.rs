@@ -39,6 +39,18 @@ pub fn init_db() -> Result<DbPool> {
         );
     ")?;
 
+    // Strategy versions table
+    conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS strategy_versions (
+            id TEXT PRIMARY KEY,
+            strategy_id TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            code TEXT NOT NULL DEFAULT '',
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    ")?;
+
     // Watchlist table
     conn.execute_batch("
         CREATE TABLE IF NOT EXISTS watchlist (

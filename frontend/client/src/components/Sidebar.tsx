@@ -12,8 +12,31 @@ import {
   Star,
   FlaskConical,
   Settings,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useTheme } from './ThemeContext';
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>
+        <button
+          onClick={toggleTheme}
+          className="w-10 h-10 rounded-md flex items-center justify-center text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-all duration-150"
+        >
+          {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="text-xs">
+        {theme === 'dark' ? '切换亮色' : '切换暗色'}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export type TabId = 'overview' | 'hot' | 'anomaly' | 'sectors' | 'flow' | 'limitup' | 'watchlist' | 'backtest' | 'settings';
 
@@ -59,6 +82,9 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           </Tooltip>
         ))}
       </nav>
+
+      {/* Theme Toggle */}
+      <ThemeToggle />
 
       {/* Settings at bottom */}
       <Tooltip delayDuration={200}>
