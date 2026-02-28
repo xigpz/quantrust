@@ -4,6 +4,7 @@ mod data;
 mod db;
 mod models;
 mod services;
+mod sim;
 mod ws;
 
 use std::sync::Arc;
@@ -14,6 +15,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::routes::{AppState, create_router};
 use auth::create_auth_router;
+use sim::create_sim_router;
 use data::DataProvider;
 use db::init_db;
 use services::scanner::MarketScanner;
@@ -50,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
         cache: scanner.cache.clone(),
         provider: provider.clone(),
         db: db.clone(),
+        sim_state: Arc::new(SimState::default()),
     };
 
     // Start periodic scan task (every 30 seconds)
@@ -74,6 +77,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/health", get(health_check))
         .merge(create_router(state.clone()))
         .merge(create_auth_router(state.clone()))
+        .merge(create_sim_router(state.clone()))
         .route("/ws", axum::routing::get(ws::ws_handler).with_state(state))
         .layer(cors)
         .layer(TraceLayer::new_for_http());
@@ -97,3 +101,4 @@ async fn health_check() -> Json<serde_json::Value> {
         "timestamp": chrono::Utc::now().to_rfc3339()
     }))
 }
+pub use sim::SimState;

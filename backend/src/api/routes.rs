@@ -11,6 +11,7 @@ use crate::services::backtest::BacktestEngine;
 use crate::services::momentum::MomentumStrategy;
 use crate::models::*;
 use crate::db::DbPool;
+use crate::sim::SimState;
 
 /// 应用状态
 #[derive(Clone)]
@@ -18,6 +19,7 @@ pub struct AppState {
     pub cache: Arc<ScannerCache>,
     pub provider: Arc<DataProvider>,
     pub db: DbPool,
+    pub sim_state: Arc<SimState>,
 }
 
 /// 创建路由
