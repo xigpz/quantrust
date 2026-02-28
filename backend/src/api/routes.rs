@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::services::scanner::ScannerCache;
 use crate::data::DataProvider;
 use crate::services::backtest::BacktestEngine;
+use crate::services::momentum::MomentumStrategy;
 use crate::models::*;
 use crate::db::DbPool;
 
@@ -44,6 +45,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/watchlist/{symbol}", axum::routing::delete(remove_watchlist))
         // 回测
         .route("/api/backtest", post(run_backtest))
+        .route("/api/momentum/:symbol", get(get_momentum))
         .route("/api/backtest/history", get(get_backtest_history))
         // 搜索
         .route("/api/search", get(search_stocks))
@@ -413,4 +415,60 @@ async fn get_backtest_history(
     }).collect();
 
     ok_response(results)
+}
+/// 动量策略分析
+async fn get_momentum(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+) -> Json<ApiResponse<crate::services::momentum::MomentumSignal>> {
+    // 获取K线数据
+    let candles = match state.provider.get_candles(&symbol, "101", 60).await {
+        Ok(c) => c,
+        Err(e) => return Json(ApiResponse {
+            success: false,
+            data: crate::services::momentum::MomentumSignal {
+                score: 0,
+                rsi: 0.0,
+                macd_dif: 0.0,
+                macd_dea: 0.0,
+                macd_hist: 0.0,
+                reasons: vec![format!("获取数据失败: {}", e)],
+            },
+            message: format!("获取数据失败: {}", e),
+        }),
+    };
+    
+    if candles.len() < 30 {
+        return Json(ApiResponse {
+            success: false,
+            data: crate::services::momentum::MomentumSignal {
+                score: 0,
+                rsi: 0.0,
+                macd_dif: 0.0,
+                macd_dea: 0.0,
+                macd_hist: 0.0,
+                reasons: vec!["K线数据不足".to_string()],
+            },
+            message: "K线数据不足".to_string(),
+        });
+    }
+    
+    let strategy = MomentumStrategy::new();
+    let signal = match strategy.buy_signal(&candles) {
+        Ok(s) => s,
+        Err(e) => return Json(ApiResponse {
+            success: false,
+            data: crate::services::momentum::MomentumSignal {
+                score: 0,
+                rsi: 0.0,
+                macd_dif: 0.0,
+                macd_dea: 0.0,
+                macd_hist: 0.0,
+                reasons: vec![format!("计算失败: {}", e)],
+            },
+            message: format!("计算失败: {}", e),
+        }),
+    };
+    
+    ok_response(signal)
 }

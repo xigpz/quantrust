@@ -13,6 +13,7 @@
 - [x] 安装 libssl-dev, pkg-config
 - [x] 编译后端成功 (92MB binary)
 - [x] 动量策略引擎 (Rust + Python)
+- [x] 动量API接口 /api/momentum/:symbol
 - [ ] 启动服务测试
 - [ ] 前端环境准备
 
@@ -27,6 +28,7 @@
 - 开发动量策略引擎 (RSI + MACD + 成交量)
   - Rust: backend/src/services/momentum.rs
   - Python: scripts/momentum_strategy.py
+- 新增 API: GET /api/momentum/:symbol
 
 ### 2026-02-27
 **状态**: 项目代码结构完整
