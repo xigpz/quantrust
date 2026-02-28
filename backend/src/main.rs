@@ -16,7 +16,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use api::routes::{AppState, create_router};
 use auth::create_auth_router;
 use sim::create_sim_router;
-use sim::create_sim_router;
 use data::DataProvider;
 use db::init_db;
 use services::scanner::MarketScanner;

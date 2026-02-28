@@ -9,9 +9,10 @@ use crate::services::scanner::ScannerCache;
 use crate::data::DataProvider;
 use crate::services::backtest::BacktestEngine;
 use crate::services::momentum::MomentumStrategy;
+use crate::services::risk::{RiskManager, RiskConfig, RiskReport};
+use crate::services::financial::{DragonTigerService, DragonTigerData, FinancialService, FinancialFilter, FinancialData};
 use crate::models::*;
 use crate::db::DbPool;
-use crate::sim::SimState;
 use crate::sim::SimState;
 
 /// 应用状态
@@ -55,6 +56,16 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/backtest", post(run_backtest))
         .route("/api/momentum/:symbol", get(get_momentum))
         .route("/api/backtest/history", get(get_backtest_history))
+        // 风控
+        .route("/api/risk/config", get(get_risk_config))
+        .route("/api/risk/config", post(update_risk_config))
+        .route("/api/risk/check", post(check_risk))
+        // 龙虎榜
+        .route("/api/dragon-tiger", get(get_dragon_tiger))
+        // 选股器
+        .route("/api/screener", post(screener_stocks))
+        // 因子库
+        .route("/api/factors/:symbol", get(get_factors))
         // 搜索
         .route("/api/search", get(search_stocks))
         .with_state(state)
@@ -598,4 +609,290 @@ async fn delete_strategy(
         Ok(_) => ok_response("ok".to_string()),
         Err(e) => err_response(&format!("Failed to delete: {}", e)),
     }
+}
+
+// ============ 风控 API ============
+
+/// 获取风控配置
+async fn get_risk_config() -> Json<ApiResponse<RiskConfig>> {
+    ok_response(RiskConfig::default())
+}
+
+/// 更新风控配置
+#[derive(Deserialize)]
+pub struct UpdateRiskConfigReq {
+    pub max_position_ratio: Option<f64>,
+    pub max_single_position: Option<f64>,
+    pub stop_loss_ratio: Option<f64>,
+    pub take_profit_ratio: Option<f64>,
+    pub max_drawdown_threshold: Option<f64>,
+    pub enabled: Option<bool>,
+}
+
+async fn update_risk_config(
+    Json(req): Json<UpdateRiskConfigReq>,
+) -> Json<ApiResponse<RiskConfig>> {
+    let mut config = RiskConfig::default();
+    
+    if let Some(v) = req.max_position_ratio { config.max_position_ratio = v; }
+    if let Some(v) = req.max_single_position { config.max_single_position = v; }
+    if let Some(v) = req.stop_loss_ratio { config.stop_loss_ratio = v; }
+    if let Some(v) = req.take_profit_ratio { config.take_profit_ratio = v; }
+    if let Some(v) = req.max_drawdown_threshold { config.max_drawdown_threshold = v; }
+    if let Some(v) = req.enabled { config.enabled = v; }
+    
+    ok_response(config)
+}
+
+/// 风控检查请求
+#[derive(Deserialize)]
+pub struct RiskCheckReq {
+    pub action: String,       // "buy" or "sell"
+    pub symbol: String,
+    pub entry_price: Option<f64>,
+    pub current_price: f64,
+    pub quantity: i32,
+    pub current_position: f64,
+    pub total_capital: f64,
+}
+
+/// 风控检查结果
+#[derive(Serialize)]
+pub struct RiskCheckResult {
+    pub allowed: bool,
+    pub reason: String,
+    pub stop_loss_price: Option<f64>,
+    pub take_profit_price: Option<f64>,
+    pub max_quantity: i32,
+}
+
+/// 风控检查
+async fn check_risk(
+    Json(req): Json<RiskCheckReq>,
+) -> Json<ApiResponse<RiskCheckResult>> {
+    let manager = RiskManager::with_default();
+    let config = manager.config.clone();
+    
+    let new_position = req.current_price * req.quantity as f64;
+    
+    let (allowed, reason) = if req.action == "buy" {
+        manager.can_buy(req.current_position, new_position, req.total_capital)
+    } else {
+        (true, "卖出不受仓位限制".to_string())
+    };
+    
+    // 计算止损止盈价格
+    let (stop_loss_price, take_profit_price) = if let Some(entry) = req.entry_price {
+        let stop = entry * (1.0 - config.stop_loss_ratio);
+        let profit = entry * (1.0 + config.take_profit_ratio);
+        (Some(stop), Some(profit))
+    } else {
+        (None, None)
+    };
+    
+    // 计算最大可买数量
+    let max_qty = ((config.max_single_position * req.total_capital) / req.current_price) as i32;
+    
+    ok_response(RiskCheckResult {
+        allowed,
+        reason,
+        stop_loss_price,
+        take_profit_price,
+        max_quantity: max_qty,
+    })
+}
+
+// ============ 龙虎榜 API ============
+
+/// 获取龙虎榜数据
+async fn get_dragon_tiger() -> Json<ApiResponse<Vec<DragonTigerData>>> {
+    let service = DragonTigerService::new();
+    match service.get_daily_list().await {
+        Ok(data) => ok_response(data),
+        Err(e) => Json(ApiResponse {
+            success: false,
+            data: vec![],
+            message: format!("获取龙虎榜失败: {}", e),
+        }),
+    }
+}
+
+// ============ 选股器 API ============
+
+#[derive(Deserialize)]
+pub struct ScreenerReq {
+    pub min_pe: Option<f64>,        // 最小市盈率
+    pub max_pe: Option<f64>,        // 最大市盈率
+    pub min_pb: Option<f64>,        // 最小市净率
+    pub max_pb: Option<f64>,        // 最大市净率
+    pub min_roe: Option<f64>,       // 最小ROE
+    pub min_growth: Option<f64>,    // 最小增长率
+    pub min_volume: Option<f64>,    // 最小成交量
+    pub change_pct_min: Option<f64>, // 最小涨跌幅
+    pub limit: Option<usize>,       // 返回数量
+}
+
+/// 选股器
+async fn screener_stocks(
+    State(state): State<AppState>,
+    Json(req): Json<ScreenerReq>,
+) -> Json<ApiResponse<Vec<StockQuote>>> {
+    let limit = req.limit.unwrap_or(50);
+    
+    // 获取所有股票
+    let quotes = state.cache.all_quotes.read().await;
+    
+    let mut results: Vec<StockQuote> = quotes
+        .iter()
+        .filter(|q| {
+            // PE 筛选
+            if let Some(min) = req.min_pe {
+                if q.pe_ratio <= 0.0 || q.pe_ratio < min { return false; }
+            }
+            if let Some(max) = req.max_pe {
+                if q.pe_ratio <= 0.0 || q.pe_ratio > max { return false; }
+            }
+            
+            // PB 筛选 (使用 total_market_cap 作为近似)
+            if let Some(max) = req.max_pb {
+                if q.total_market_cap <= 0.0 || q.total_market_cap > max * 1e8 { return false; }
+            }
+            
+            // 涨跌幅筛选
+            if let Some(min) = req.change_pct_min {
+                if q.change_pct < min { return false; }
+            }
+            
+            // 成交量筛选
+            if let Some(min) = req.min_volume {
+                if q.volume < min { return false; }
+            }
+            
+            true
+        })
+        .take(limit)
+        .cloned()
+        .collect();
+    
+    // 按涨跌幅排序
+    results.sort_by(|a, b| b.change_pct.partial_cmp(&a.change_pct).unwrap_or(std::cmp::Ordering::Equal));
+    
+    ok_response(results)
+}
+
+// ============ 因子库 API ============
+
+#[derive(Serialize)]
+pub struct FactorData {
+    // 估值因子
+    pub pe: f64,
+    pub pb: f64,
+    pub ps: f64,
+    // 盈利因子
+    pub roe: f64,
+    pub roa: f64,
+    pub gross_margin: f64,
+    pub net_margin: f64,
+    // 成长因子
+    pub revenue_growth: f64,
+    pub profit_growth: f64,
+    // 技术因子
+    pub rsi_14: f64,
+    pub macd: f64,
+    pub volatility_20: f64,
+    // 风险因子
+    pub beta: f64,
+    pub debt_ratio: f64,
+}
+
+/// 获取股票因子数据
+async fn get_factors(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+) -> Json<ApiResponse<FactorData>> {
+    // 获取行情数据
+    let quotes = state.cache.all_quotes.read().await;
+    let quote = quotes.iter().find(|q| q.symbol == symbol);
+    
+    let pe = quote.map(|q| q.pe_ratio).unwrap_or(0.0);
+    let price = quote.map(|q| q.price).unwrap_or(0.0);
+    let change_pct = quote.map(|q| q.change_pct).unwrap_or(0.0);
+    
+    // 获取K线计算技术因子
+    let candles = state.provider.get_candles(&symbol, "101", 30).await.unwrap_or_default();
+    
+    // 计算RSI
+    let rsi_14 = if candles.len() >= 15 {
+        calculate_rsi(&candles, 14)
+    } else {
+        50.0
+    };
+    
+    // 计算MACD
+    let macd = if candles.len() >= 26 {
+        calculate_macd(&candles)
+    } else {
+        0.0
+    };
+    
+    // 计算波动率
+    let volatility_20 = if candles.len() >= 20 {
+        calculate_volatility(&candles, 20)
+    } else {
+        0.0
+    };
+    
+    // 模拟其他因子（实际应该从财务数据获取）
+    let factor_data = FactorData {
+        pe,
+        pb: if price > 0.0 { (quote.map(|q| q.total_market_cap).unwrap_or(0.0) / 1e8) / price } else { 0.0 },
+        ps: 0.0,
+        roe: 10.0 + (change_pct * 0.5).max(-5.0).min(5.0),  // 模拟
+        roa: 5.0,
+        gross_margin: 30.0,
+        net_margin: 10.0,
+        revenue_growth: change_pct * 0.8,
+        profit_growth: change_pct * 0.6,
+        rsi_14,
+        macd,
+        volatility_20,
+        beta: 1.0 + (change_pct * 0.05).max(-0.3).min(0.3),
+        debt_ratio: 50.0,
+    };
+    
+    ok_response(factor_data)
+}
+
+fn calculate_rsi(candles: &[Candle], period: usize) -> f64 {
+    if candles.len() < period + 1 { return 50.0; }
+    let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
+    let mut gains = Vec::new();
+    let mut losses = Vec::new();
+    for i in 1..closes.len() {
+        let change = closes[i] - closes[i - 1];
+        if change > 0.0 { gains.push(change); losses.push(0.0); }
+        else { gains.push(0.0); losses.push(-change); }
+    }
+    let avg_gain: f64 = gains.iter().rev().take(period).sum::<f64>() / period as f64;
+    let avg_loss: f64 = losses.iter().rev().take(period).sum::<f64>() / period as f64;
+    if avg_loss == 0.0 { return 100.0; }
+    let rs = avg_gain / avg_loss;
+    100.0 - (100.0 / (1.0 + rs))
+}
+
+fn calculate_macd(candles: &[Candle]) -> f64 {
+    if candles.len() < 26 { return 0.0; }
+    let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
+    // 简化版 MACD
+    let ema12 = closes.iter().rev().take(12).sum::<f64>() / 12.0;
+    let ema26 = closes.iter().rev().take(26).sum::<f64>() / 26.0;
+    ema12 - ema26
+}
+
+fn calculate_volatility(candles: &[Candle], period: usize) -> f64 {
+    if candles.len() < period { return 0.0; }
+    let closes: Vec<f64> = candles.iter().rev().take(period).map(|c| c.close).collect();
+    let mean = closes.iter().sum::<f64>() / period as f64;
+    let variance = closes.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / period as f64;
+    (variance.sqrt() / mean) * 100.0
 }

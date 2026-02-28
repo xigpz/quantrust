@@ -15,9 +15,15 @@ import {
   Sun,
   Moon,
   Wallet,
+  TrendingUp,
+  Shield,
+  Award,
+  Filter,
+  Activity,
+  Briefcase,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useTheme } from './ThemeContext';
+import { useTheme } from '@/contexts/ThemeContext';
 
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
@@ -39,7 +45,7 @@ function ThemeToggle() {
   );
 }
 
-export type TabId = 'overview' | 'hot' | 'anomaly' | 'sectors' | 'flow' | 'limitup' | 'watchlist' | 'backtest' | 'sim' | 'settings';
+export type TabId = 'overview' | 'hot' | 'anomaly' | 'momentum' | 'risk' | 'dragon' | 'factor' | 'screener' | 'sectors' | 'flow' | 'limitup' | 'watchlist' | 'backtest' | 'sim' | 'portfolio' | 'settings';
 
 interface SidebarProps {
   activeTab: TabId;
@@ -50,12 +56,18 @@ const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: '市场总览', icon: <LayoutDashboard className="w-[18px] h-[18px]" /> },
   { id: 'hot', label: '热点监测', icon: <Flame className="w-[18px] h-[18px]" /> },
   { id: 'anomaly', label: '异动检测', icon: <Zap className="w-[18px] h-[18px]" /> },
+  { id: 'momentum', label: '动量分析', icon: <TrendingUp className="w-[18px] h-[18px]" /> },
+  { id: 'risk', label: '风险控制', icon: <Shield className="w-[18px] h-[18px]" /> },
+  { id: 'dragon', label: '龙虎榜', icon: <Award className="w-[18px] h-[18px]" /> },
+  { id: 'factor', label: '因子库', icon: <Activity className="w-[18px] h-[18px]" /> },
+  { id: 'screener', label: '选股器', icon: <Filter className="w-[18px] h-[18px]" /> },
   { id: 'sectors', label: '板块行情', icon: <PieChart className="w-[18px] h-[18px]" /> },
   { id: 'flow', label: '资金流向', icon: <ArrowLeftRight className="w-[18px] h-[18px]" /> },
   { id: 'limitup', label: '涨停监控', icon: <BarChart3 className="w-[18px] h-[18px]" /> },
   { id: 'watchlist', label: '自选股', icon: <Star className="w-[18px] h-[18px]" /> },
   { id: 'backtest', label: '策略回测', icon: <FlaskConical className="w-[18px] h-[18px]" /> },
   { id: 'sim', label: '模拟交易', icon: <Wallet className="w-[18px] h-[18px]" /> },
+  { id: 'portfolio', label: '持仓分析', icon: <Briefcase className="w-[18px] h-[18px]" /> },
 ];
 
 export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {

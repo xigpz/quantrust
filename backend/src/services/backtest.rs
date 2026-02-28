@@ -2,6 +2,7 @@ use anyhow::Result;
 use crate::models::*;
 use chrono::Utc;
 use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
 /// 回测引擎 - 基于事件驱动的简单回测框架
 pub struct BacktestEngine;
@@ -231,10 +232,10 @@ pub fn optimize_ma_params(candles: &[Candle], params: &BacktestParams) -> Vec<Op
             if let Ok(result) = engine.run_ma_crossover(candles, params, short, long) {
                 results.push(OptimizationResult {
                     params: serde_json::json!({"short_period": short, "long_period": long}),
-                    total_return: result.total_return,
-                    sharpe_ratio: result.sharpe_ratio,
-                    max_drawdown: result.max_drawdown,
-                    win_rate: result.win_rate,
+                    total_return: result.kpis.total_return,
+                    sharpe_ratio: result.kpis.sharpe_ratio,
+                    max_drawdown: result.kpis.max_drawdown,
+                    win_rate: result.kpis.win_rate,
                 });
             }
         }

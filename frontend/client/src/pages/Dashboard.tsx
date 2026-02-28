@@ -8,12 +8,18 @@ import Sidebar, { type TabId } from '@/components/Sidebar';
 import OverviewPanel from '@/components/panels/OverviewPanel';
 import HotStocksPanel from '@/components/panels/HotStocksPanel';
 import AnomalyPanel from '@/components/panels/AnomalyPanel';
+import MomentumPanel from '@/components/panels/MomentumPanel';
+import RiskPanel from '@/components/panels/RiskPanel';
+import DragonTigerPanel from '@/components/panels/DragonTigerPanel';
+import FactorPanel from '@/components/panels/FactorPanel';
+import ScreenerPanel from '@/components/panels/ScreenerPanel';
 import SectorsPanel from '@/components/panels/SectorsPanel';
 import MoneyFlowPanel from '@/components/panels/MoneyFlowPanel';
 import LimitUpPanel from '@/components/panels/LimitUpPanel';
 import WatchlistPanel from '@/components/panels/WatchlistPanel';
 import BacktestPanel from '@/components/panels/BacktestPanel';
 import SimTrading from './SimTrading';
+import PortfolioPanel from '@/components/panels/PortfolioPanel';
 import SettingsPanel from '@/components/panels/SettingsPanel';
 import StockDetailModal from '@/components/StockDetailModal';
 import { useWebSocket } from '@/hooks/useMarketData';
@@ -29,12 +35,18 @@ const panelMap: Record<TabId, React.ComponentType> = {
   overview: OverviewPanel,
   hot: HotStocksPanel,
   anomaly: AnomalyPanel,
+  momentum: MomentumPanel,
+  risk: RiskPanel,
+  dragon: DragonTigerPanel,
+  factor: FactorPanel,
+  screener: ScreenerPanel,
   sectors: SectorsPanel,
   flow: MoneyFlowPanel,
   limitup: LimitUpPanel,
   watchlist: WatchlistPanel,
   backtest: BacktestPanel,
   sim: SimTrading,
+  portfolio: PortfolioPanel,
   settings: SettingsPanel,
 };
 

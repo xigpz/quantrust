@@ -328,6 +328,20 @@ export async function removeFromWatchlist(symbol: string): Promise<ApiResponse<s
   return res.json();
 }
 
+// Momentum Strategy
+export interface MomentumSignal {
+  score: number;
+  rsi: number;
+  macd_dif: number;
+  macd_dea: number;
+  macd_hist: number;
+  reasons: string[];
+}
+
+export function useMomentum(symbol: string) {
+  return useApi<MomentumSignal>(`/api/momentum/${encodeURIComponent(symbol)}`);
+}
+
 // Format helpers
 export function formatNumber(num: number, decimals = 2): string {
   if (num === 0 || isNaN(num)) return '—';

@@ -92,15 +92,74 @@ async fn create_order(State(state): State<AppState>, Json(req): Json<CreateOrder
     let oid = format!("ORD{:06}", { let mut c = state.sim_state.next_order_id.lock().unwrap(); let r=*c; *c+=1; r });
     let now = Utc::now().to_rfc3339();
     let acc = state.sim_state.account.lock().unwrap();
-    if req.direction=="buy" && req.price*req.quantity>acc.cash { return Json(serde_json::json!({"success":false,"message":"资金不足"})); }
-    if req.direction=="sell" { let ps = state.sim_state.positions.lock().unwrap(); let h:f64 = ps.iter().filter(|p|p.symbol==req.symbol).map(|p|p.quantity).sum(); if h<req.quantity { return Json(serde_json::json!({"success":false,"message":"持仓不足"})); } }
+    if req.direction=="buy" && req.price*req.quantity>acc.cash { 
+        return Json(serde_json::json!({"success":false,"message":"资金不足"})); 
+    }
+    if req.direction=="sell" { 
+        let ps = state.sim_state.positions.lock().unwrap(); 
+        let h:f64 = ps.iter().filter(|p|p.symbol==req.symbol).map(|p|p.quantity).sum(); 
+        if h<req.quantity { 
+            return Json(serde_json::json!({"success":false,"message":"持仓不足"})); 
+        } 
+    }
     drop(acc);
-    let order = Order { id:oid.clone(), symbol:req.symbol.clone(), name:req.name.clone(), direction:req.direction.clone(), price:req.price, quantity:req.quantity, filled:req.quantity, status:"filled".to_string(), created_at:now.clone(), updated_at:now.clone() };
+    let order = Order { 
+        id: oid.clone(), 
+        symbol: req.symbol.clone(), 
+        name: req.name.clone(), 
+        direction: req.direction.clone(), 
+        price: req.price, 
+        quantity: req.quantity, 
+        filled: req.quantity, 
+        status: "filled".to_string(), 
+        created_at: now.clone(), 
+        updated_at: now.clone() 
+    };
     state.sim_state.orders.lock().unwrap().push(order.clone());
     let tid = format!("TRD{:06}", { let mut c = state.sim_state.next_trade_id.lock().unwrap(); let r=*c; *c+=1; r });
-    state.sim_state.trades.lock().unwrap().push(Trade { id:tid, order_id:oid, symbol:req.symbol.clone(), direction:req.direction.clone(), price:req.price, quantity:req.quantity, amount:req.price*req.quantity, traded_at:now.clone() });
-    { let mut a = state.sim_state.account.lock().unwrap(); if req.direction=="buy" { a.cash -= req.price*req.quantity; } else { a.cash += req.price*req.quantity; } }
-    { let mut ps = state.sim_state.positions.lock().unwrap(); if req.direction=="buy" { if let Some(p)=ps.iter_mut().find(|p|p.symbol==req.symbol) { let tc = p.avg_cost*p.quantity + req.price*req.quantity; p.quantity+=req.quantity; p.avg_cost=tc/p.quantity; } else { ps.push(Position { symbol:req.symbol.clone(), name:req.name.clone(), quantity:req.quantity, avg_cost:req.price, current_price:req.price, market_value:req.price*req.quantity, pnl:0.0, pnl_rate:0.0 }); } } else { if let Some(p)=ps.iter_mut().find(|p|p.symbol==req.symbol) { p.quantity-=req.quantity; if p.quantity<=0.0 { ps.retain(|p|p.symbol!=req.symbol); } } } } }
+    state.sim_state.trades.lock().unwrap().push(Trade { 
+        id: tid, 
+        order_id: oid, 
+        symbol: req.symbol.clone(), 
+        direction: req.direction.clone(), 
+        price: req.price, 
+        quantity: req.quantity, 
+        amount: req.price*req.quantity, 
+        traded_at: now.clone() 
+    });
+    { 
+        let mut a = state.sim_state.account.lock().unwrap(); 
+        if req.direction=="buy" { a.cash -= req.price*req.quantity; } 
+        else { a.cash += req.price*req.quantity; } 
+    }
+    { 
+        let mut ps = state.sim_state.positions.lock().unwrap(); 
+        if req.direction=="buy" { 
+            if let Some(p)=ps.iter_mut().find(|p|p.symbol==req.symbol) { 
+                let tc = p.avg_cost*p.quantity + req.price*req.quantity; 
+                p.quantity+=req.quantity; 
+                p.avg_cost=tc/p.quantity; 
+            } else { 
+                ps.push(Position { 
+                    symbol: req.symbol.clone(), 
+                    name: req.name.clone(), 
+                    quantity: req.quantity, 
+                    avg_cost: req.price, 
+                    current_price: req.price, 
+                    market_value: req.price*req.quantity, 
+                    pnl: 0.0, 
+                    pnl_rate: 0.0 
+                }); 
+            } 
+        } else { 
+            if let Some(p)=ps.iter_mut().find(|p|p.symbol==req.symbol) { 
+                p.quantity-=req.quantity; 
+                if p.quantity<=0.0 { 
+                    ps.retain(|p|p.symbol!=req.symbol); 
+                } 
+            } 
+        } 
+    }
     Json(serde_json::json!({ "success": true, "data": order, "message": "成交" }))
 }
 
