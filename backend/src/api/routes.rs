@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use crate::services::scanner::ScannerCache;
 use crate::data::DataProvider;
-use crate::services::backtest::BacktestEngine;
+use crate::services::backtest::{BacktestEngine, OptimizationResult as BtOptimizationResult};
 use crate::services::momentum::MomentumStrategy;
 use crate::services::risk::{RiskManager, RiskConfig, RiskReport};
 use crate::services::financial::{DragonTigerService, DragonTigerData, FinancialService, FinancialFilter, FinancialData};
@@ -66,6 +66,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/screener", post(screener_stocks))
         // 因子库
         .route("/api/factors/:symbol", get(get_factors))
+        // 参数优化
+        .route("/api/backtest/optimize", post(optimize_params))
+        // 策略版本
+        .route("/api/strategies/:id/versions", get(get_strategy_versions))
+        .route("/api/strategies/:id/versions", post(create_strategy_version))
         // 搜索
         .route("/api/search", get(search_stocks))
         .with_state(state)
@@ -895,4 +900,147 @@ fn calculate_volatility(candles: &[Candle], period: usize) -> f64 {
     let mean = closes.iter().sum::<f64>() / period as f64;
     let variance = closes.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / period as f64;
     (variance.sqrt() / mean) * 100.0
+}
+
+// ============ 参数优化 API ============
+
+#[derive(Deserialize)]
+pub struct OptimizeReq {
+    pub symbol: String,
+    pub period: Option<String>,
+    pub count: Option<u32>,
+    pub initial_capital: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct OptimizationResult {
+    pub params: serde_json::Value,
+    pub total_return: f64,
+    pub sharpe_ratio: f64,
+    pub max_drawdown: f64,
+    pub win_rate: f64,
+}
+
+/// 参数优化
+async fn optimize_params(
+    State(state): State<AppState>,
+    Json(req): Json<OptimizeReq>,
+) -> Json<ApiResponse<Vec<OptimizationResult>>> {
+    let period = req.period.unwrap_or_else(|| "1d".to_string());
+    let count = req.count.unwrap_or(500);
+    let initial_capital = req.initial_capital.unwrap_or(100000.0);
+    
+    // 获取K线数据
+    let candles = match state.provider.get_candles(&req.symbol, &period, count).await {
+        Ok(c) => c,
+        Err(e) => return Json(ApiResponse {
+            success: false,
+            data: vec![],
+            message: format!("获取数据失败: {}", e),
+        }),
+    };
+    
+    let params = BacktestParams {
+        strategy_id: "ma_crossover".to_string(),
+        symbol: req.symbol.clone(),
+        start_date: candles.first().map(|c| c.timestamp.clone()).unwrap_or_default(),
+        end_date: candles.last().map(|c| c.timestamp.clone()).unwrap_or_default(),
+        initial_capital,
+        commission_rate: 0.0003,
+        slippage: 0.0,
+    };
+    
+    let engine = BacktestEngine::new();
+    let results = engine.optimize_ma_params(&candles, &params);
+    
+    // 只返回前50个结果
+    let results: Vec<OptimizationResult> = results.into_iter().take(50).map(|r| OptimizationResult {
+        params: r.params,
+        total_return: r.total_return,
+        sharpe_ratio: r.sharpe_ratio,
+        max_drawdown: r.max_drawdown,
+        win_rate: r.win_rate,
+    }).collect();
+    
+    ok_response(results)
+}
+
+// ============ 策略版本管理 API ============
+
+#[derive(Serialize, Deserialize)]
+pub struct StrategyVersion {
+    pub id: String,
+    pub strategy_id: String,
+    pub version: i32,
+    pub code: String,
+    pub description: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateVersionReq {
+    pub code: String,
+    pub description: Option<String>,
+}
+
+/// 获取策略版本历史
+async fn get_strategy_versions(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<Vec<StrategyVersion>>> {
+    let db = state.db.lock().unwrap();
+    let mut stmt = match db.prepare(
+        "SELECT id, strategy_id, version, code, description, created_at FROM strategy_versions WHERE strategy_id = ?1 ORDER BY version DESC"
+    ) {
+        Ok(s) => s,
+        Err(_) => return Json(ApiResponse { success: true, data: vec![], message: "ok".to_string() }),
+    };
+    
+    let versions: Vec<StrategyVersion> = stmt.query_map([id], |row| {
+        Ok(StrategyVersion {
+            id: row.get(0)?,
+            strategy_id: row.get(1)?,
+            version: row.get(2)?,
+            code: row.get(3)?,
+            description: row.get(4)?,
+            created_at: row.get(5)?,
+        })
+    }).unwrap().filter_map(|r| r.ok()).collect();
+    
+    ok_response(versions)
+}
+
+/// 创建新版本
+async fn create_strategy_version(
+    State(state): State<AppState>,
+    Path(strategy_id): Path<String>,
+    Json(req): Json<CreateVersionReq>,
+) -> Json<ApiResponse<StrategyVersion>> {
+    let db = state.db.lock().unwrap();
+    
+    // 获取最新版本号
+    let latest_version: i32 = db.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM strategy_versions WHERE strategy_id = ?1",
+        [&strategy_id],
+        |row| row.get(0),
+    ).unwrap_or(0);
+    
+    let new_version = latest_version + 1;
+    let version_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    
+    match db.execute(
+        "INSERT INTO strategy_versions (id, strategy_id, version, code, description, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![version_id, strategy_id, new_version, req.code, req.description, now],
+    ) {
+        Ok(_) => ok_response(StrategyVersion {
+            id: version_id,
+            strategy_id,
+            version: new_version,
+            code: req.code,
+            description: req.description,
+            created_at: now,
+        }),
+        Err(e) => Json(ApiResponse { success: false, data: StrategyVersion { id: String::new(), strategy_id: String::new(), version: 0, code: String::new(), description: None, created_at: String::new() }, message: format!("创建版本失败: {}", e) }),
+    }
 }

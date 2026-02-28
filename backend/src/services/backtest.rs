@@ -12,6 +12,11 @@ impl BacktestEngine {
         Self
     }
 
+    /// 参数优化
+    pub fn optimize_ma_params(&self, candles: &[Candle], params: &BacktestParams) -> Vec<OptimizationResult> {
+        optimize_ma_params(candles, params)
+    }
+
     /// 执行双均线策略回测
     pub fn run_ma_crossover(
         &self,

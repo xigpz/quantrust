@@ -18,6 +18,8 @@ import MoneyFlowPanel from '@/components/panels/MoneyFlowPanel';
 import LimitUpPanel from '@/components/panels/LimitUpPanel';
 import WatchlistPanel from '@/components/panels/WatchlistPanel';
 import BacktestPanel from '@/components/panels/BacktestPanel';
+import OptimizationPanel from '@/components/panels/OptimizationPanel';
+import StrategyVersionsPanel from '@/components/panels/StrategyVersionsPanel';
 import SimTrading from './SimTrading';
 import PortfolioPanel from '@/components/panels/PortfolioPanel';
 import SettingsPanel from '@/components/panels/SettingsPanel';
@@ -45,6 +47,8 @@ const panelMap: Record<TabId, React.ComponentType> = {
   limitup: LimitUpPanel,
   watchlist: WatchlistPanel,
   backtest: BacktestPanel,
+  optimize: OptimizationPanel,
+  versions: StrategyVersionsPanel,
   sim: SimTrading,
   portfolio: PortfolioPanel,
   settings: SettingsPanel,

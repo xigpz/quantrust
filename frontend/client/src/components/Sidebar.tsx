@@ -21,6 +21,8 @@ import {
   Filter,
   Activity,
   Briefcase,
+  Settings2,
+  GitBranch,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -45,7 +47,7 @@ function ThemeToggle() {
   );
 }
 
-export type TabId = 'overview' | 'hot' | 'anomaly' | 'momentum' | 'risk' | 'dragon' | 'factor' | 'screener' | 'sectors' | 'flow' | 'limitup' | 'watchlist' | 'backtest' | 'sim' | 'portfolio' | 'settings';
+export type TabId = 'overview' | 'hot' | 'anomaly' | 'momentum' | 'risk' | 'dragon' | 'factor' | 'screener' | 'sectors' | 'flow' | 'limitup' | 'watchlist' | 'backtest' | 'optimize' | 'versions' | 'sim' | 'portfolio' | 'settings';
 
 interface SidebarProps {
   activeTab: TabId;
@@ -66,6 +68,8 @@ const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'limitup', label: '涨停监控', icon: <BarChart3 className="w-[18px] h-[18px]" /> },
   { id: 'watchlist', label: '自选股', icon: <Star className="w-[18px] h-[18px]" /> },
   { id: 'backtest', label: '策略回测', icon: <FlaskConical className="w-[18px] h-[18px]" /> },
+  { id: 'optimize', label: '参数优化', icon: <Settings2 className="w-[18px] h-[18px]" /> },
+  { id: 'versions', label: '版本管理', icon: <GitBranch className="w-[18px] h-[18px]" /> },
   { id: 'sim', label: '模拟交易', icon: <Wallet className="w-[18px] h-[18px]" /> },
   { id: 'portfolio', label: '持仓分析', icon: <Briefcase className="w-[18px] h-[18px]" /> },
 ];
