@@ -1,4 +1,5 @@
 mod api;
+mod auth;
 mod data;
 mod db;
 mod models;
@@ -12,6 +13,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::routes::{AppState, create_router};
+use auth::create_auth_router;
 use data::DataProvider;
 use db::init_db;
 use services::scanner::MarketScanner;
@@ -71,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/api/health", get(health_check))
         .merge(create_router(state.clone()))
+        .merge(create_auth_router(state.clone()))
         .route("/ws", axum::routing::get(ws::ws_handler).with_state(state))
         .layer(cors)
         .layer(TraceLayer::new_for_http());

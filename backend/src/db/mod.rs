@@ -13,13 +13,13 @@ pub fn init_db() -> Result<DbPool> {
         PRAGMA foreign_keys=ON;
     ")?;
 
-    // Users table
+    // Users table (for JWT auth)
     conn.execute_batch("
         CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            email TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user',
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            email TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
