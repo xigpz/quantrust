@@ -300,3 +300,53 @@ mod tests {
         assert!(triggered, "16%盈利应触发止盈");
     }
 }
+
+// ============ 高级风控规则 ============
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AdvancedRiskRule {
+    pub id: String,
+    pub name: String,
+    pub rule_type: String,  // "max_position", "stop_loss", "take_profit", "daily_loss_limit"
+    pub threshold: f64,
+    pub enabled: bool,
+}
+
+impl AdvancedRiskRule {
+    pub fn check(&self, account: &Account, position: &Position, current_price: f64) -> bool {
+        if !self.enabled { return true; }
+        
+        match self.rule_type.as_str() {
+            "max_position" => {
+                // 单只股票最大仓位 20%
+                let position_ratio = (position.quantity * current_price) / account.total_value;
+                position_ratio <= self.threshold
+            }
+            "stop_loss" => {
+                // 止损线
+                let pnl_ratio = (current_price - position.avg_cost) / position.avg_cost;
+                pnl_ratio >= -self.threshold
+            }
+            "take_profit" => {
+                // 止盈线
+                let pnl_ratio = (current_price - position.avg_cost) / position.avg_cost;
+                pnl_ratio <= self.threshold
+            }
+            "daily_loss_limit" => {
+                // 每日最大亏损 5%
+                account.daily_pnl_rate.abs() <= self.threshold
+            }
+            _ => true,
+        }
+    }
+}
+
+// 默认风控规则
+pub fn default_risk_rules() -> Vec<AdvancedRiskRule> {
+    vec![
+        AdvancedRiskRule { id: "1".to_string(), name: "单股最大仓位".to_string(), rule_type: "max_position".to_string(), threshold: 0.2, enabled: true },
+        AdvancedRiskRule { id: "2".to_string(), name: "止损线".to_string(), rule_type: "stop_loss".to_string(), threshold: 0.05, enabled: true },
+        AdvancedRiskRule { id: "3".to_string(), name: "止盈线".to_string(), rule_type: "take_profit".to_string(), threshold: 0.15, enabled: true },
+        AdvancedRiskRule { id: "4".to_string(), name: "每日最大亏损".to_string(), rule_type: "daily_loss_limit".to_string(), threshold: 0.05, enabled: true },
+    ]
+}

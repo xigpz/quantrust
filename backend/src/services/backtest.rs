@@ -209,3 +209,38 @@ impl BacktestEngine {
         }
     }
 }
+
+// ============ 参数优化 - 网格搜索 ============
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OptimizationResult {
+    pub params: serde_json::Value,
+    pub total_return: f64,
+    pub sharpe_ratio: f64,
+    pub max_drawdown: f64,
+    pub win_rate: f64,
+}
+
+pub fn optimize_ma_params(candles: &[Candle], params: &BacktestParams) -> Vec<OptimizationResult> {
+    let mut results = Vec::new();
+    
+    // 网格搜索 short_period 和 long_period
+    for short in 3..=20 {
+        for long in (short + 5)..=60 {
+            let engine = BacktestEngine::new();
+            if let Ok(result) = engine.run_ma_crossover(candles, params, short, long) {
+                results.push(OptimizationResult {
+                    params: serde_json::json!({"short_period": short, "long_period": long}),
+                    total_return: result.total_return,
+                    sharpe_ratio: result.sharpe_ratio,
+                    max_drawdown: result.max_drawdown,
+                    win_rate: result.win_rate,
+                });
+            }
+        }
+    }
+    
+    // 按总收益排序
+    results.sort_by(|a, b| b.total_return.partial_cmp(&a.total_return).unwrap());
+    results
+}
