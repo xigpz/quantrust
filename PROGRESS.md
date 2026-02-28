@@ -15,13 +15,14 @@
 - [x] 动量策略引擎 (Rust + Python)
 - [x] 动量API接口 /api/momentum/:symbol
 - [x] 风险控制模块 (仓位管理 + 止损止盈 + 最大回撤)
+- [x] 数据增强模块 (财务数据 + 龙虎榜 + 资金流向)
 - [ ] 启动服务测试
 - [ ] 前端环境准备
 
 ## 进度记录
 
 ### 2026-02-28
-**状态**: 风险控制开发完成
+**状态**: 数据增强开发完成
 
 **今日完成**:
 - 安装 Rust 1.93.1 环境
@@ -31,10 +32,9 @@
 - **新增风险控制模块**:
   - Rust: backend/src/services/risk.rs
   - Python: scripts/risk_control.py
-  - 仓位管理 (最大仓位、单股限制)
-  - 止损止盈 (5%/15% 默认)
-  - 最大回撤告警
-  - 风控报告生成
+- **新增数据增强模块**:
+  - backend/src/services/financial.rs (财务数据 + 龙虎榜)
+  - backend/src/services/capital_flow.rs (资金流向)
 
 ### 2026-02-27
 **状态**: 项目代码结构完整
