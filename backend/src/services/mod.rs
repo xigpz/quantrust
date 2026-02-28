@@ -7,6 +7,7 @@ pub mod risk;
 pub mod financial;
 pub mod capital_flow;
 pub mod notification;
+pub mod trading;
 
 pub use anomaly::AnomalyDetector;
 pub use hot_stocks::HotStockRanker;
@@ -17,3 +18,4 @@ pub use risk::{RiskManager, RiskConfig, RiskReport, TradeSignal, TradeType, Trad
 pub use financial::{FinancialService, FinancialData, FinancialFilter, DragonTigerService, DragonTigerData};
 pub use capital_flow::{CapitalFlowService, CapitalFlow, SectorFlow, FlowAnomaly};
 pub use notification::{NotificationService, AlertManager, Notification, NotificationType};
+pub use trading::{TradingEngine, Broker, Order, Position, Account, FutuConfig, OrderType, Direction, OrderStatus};
