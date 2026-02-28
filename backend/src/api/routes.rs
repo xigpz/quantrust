@@ -43,6 +43,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/watchlist", get(get_watchlist))
         .route("/api/watchlist", post(add_watchlist))
         .route("/api/watchlist/{symbol}", axum::routing::delete(remove_watchlist))
+        // 策略管理
+        .route("/api/strategies", get(get_strategies))
+        .route("/api/strategies", post(create_strategy))
+        .route("/api/strategies/{id}", get(get_strategy))
+        .route("/api/strategies/{id}", axum::routing::delete(delete_strategy))
         // 回测
         .route("/api/backtest", post(run_backtest))
         .route("/api/momentum/:symbol", get(get_momentum))
@@ -471,4 +476,123 @@ async fn get_momentum(
     };
     
     ok_response(signal)
+}
+
+// ============ 策略管理 API ============
+
+#[derive(Debug, Serialize, Deserialize)]
+#[derive(Default)]
+pub struct Strategy {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub code: String,
+    pub language: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateStrategyReq {
+    pub name: String,
+    pub description: Option<String>,
+    pub code: String,
+    pub language: Option<String>,
+}
+
+/// 获取策略列表
+async fn get_strategies(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<Vec<Strategy>>> {
+    let db = state.db.lock().unwrap();
+    let mut stmt = db.prepare(
+        "SELECT id, name, description, code, language, created_at, updated_at FROM strategies ORDER BY updated_at DESC"
+    ).unwrap();
+    
+    let items: Vec<Strategy> = stmt.query_map([], |row| {
+        Ok(Strategy {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            description: row.get(2)?,
+            code: row.get(3)?,
+            language: row.get(4)?,
+            created_at: row.get(5)?,
+            updated_at: row.get(6)?,
+        })
+    }).unwrap().filter_map(|r| r.ok()).collect();
+
+    ok_response(items)
+}
+
+/// 创建策略
+async fn create_strategy(
+    State(state): State<AppState>,
+    Json(req): Json<CreateStrategyReq>,
+) -> Json<ApiResponse<Strategy>> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let language = req.language.unwrap_or_else(|| "python".to_string());
+    
+    let db = state.db.lock().unwrap();
+    match db.execute(
+        "INSERT INTO strategies (id, name, description, code, language, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, req.name, req.description, req.code, language, now, now],
+    ) {
+        Ok(_) => {
+            let strategy = Strategy {
+                id,
+                name: req.name,
+                description: req.description,
+                code: req.code,
+                language,
+                created_at: now.clone(),
+                updated_at: now,
+            };
+            ok_response(strategy)
+        }
+        Err(e) => err_response(&format!("Failed to create strategy: {}", e)),
+    }
+}
+
+/// 获取单个策略
+async fn get_strategy(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<Strategy>> {
+    let db = state.db.lock().unwrap();
+    let result = db.query_row(
+        "SELECT id, name, description, code, language, created_at, updated_at FROM strategies WHERE id = ?1",
+        rusqlite::params![id],
+        |row| {
+            Ok(Strategy {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                code: row.get(3)?,
+                language: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        },
+    );
+
+    match result {
+        Ok(s) => ok_response(s),
+        Err(_) => err_response("Strategy not found"),
+    }
+}
+
+/// 删除策略
+async fn delete_strategy(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<String>> {
+    let db = state.db.lock().unwrap();
+    match db.execute(
+        "DELETE FROM strategies WHERE id = ?1",
+        rusqlite::params![id],
+    ) {
+        Ok(_) => ok_response("ok".to_string()),
+        Err(e) => err_response(&format!("Failed to delete: {}", e)),
+    }
 }
