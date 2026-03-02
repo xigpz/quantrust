@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { TrendingUp, TrendingDown, RefreshCw, Award, Users } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useStockClick } from '@/pages/Dashboard';
 
 interface DragonTigerData {
   symbol: string;
@@ -29,6 +30,7 @@ function formatMoney(num: number): string {
 
 export default function DragonTigerPanel() {
   const [data, setData] = useState<DragonTigerData[]>([]);
+  const { openStock } = useStockClick();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,7 +90,7 @@ export default function DragonTigerPanel() {
               </thead>
               <tbody>
                 {data.slice(0, 30).map((item, idx) => (
-                  <tr key={idx} className="border-b border-border/50 hover:bg-accent/50 transition-colors">
+                  <tr key={idx} onClick={() => openStock(item.symbol, item.name)} className="border-b border-border/50 hover:bg-accent/50 transition-colors cursor-pointer">
                     <td className="py-2 px-2">
                       <div className="font-medium">{item.name}</div>
                       <div className="text-muted-foreground text-xs">{item.symbol}</div>

@@ -114,7 +114,16 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
   const [candles, setCandles] = useState<Candle[]>([]);
   const [moneyFlow, setMoneyFlow] = useState<MoneyFlowDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [period, setPeriod] = useState<'1d' | '1w' | '1M'>('1d');
+  const [period, setPeriod] = useState<'5m' | '15m' | '1d' | '1w' | '1M'>('1d');
+  
+  // period 对应的 API 参数
+  const periodMap = {
+    '5m': { api: '1', count: 80 },     // 5分钟
+    '15m': { api: '5', count: 80 },    // 15分钟
+    '1d': { api: '101', count: 90 },   // 日线
+    '1w': { api: '102', count: 52 },   // 周线
+    '1M': { api: '103', count: 24 },   // 月线
+  };
   const [favLoading, setFavLoading] = useState(false);
   const [isFav, setIsFav] = useState(false);
 
@@ -124,7 +133,7 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
     try {
       const [detailRes, candleRes, flowRes, watchlistRes] = await Promise.allSettled([
         fetch(`${API_BASE}/api/quotes/${symbol}`).then(r => r.json()),
-        fetch(`${API_BASE}/api/candles/${symbol}?period=${period}&count=90`).then(r => r.json()),
+        fetch(`${API_BASE}/api/candles/${symbol}?period=${periodMap[period].api}&count=${periodMap[period].count}`).then(r => r.json()),
         fetch(`${API_BASE}/api/money-flow`).then(r => r.json()),
         fetch(`${API_BASE}/api/watchlist`).then(r => r.json()),
       ]);
@@ -165,15 +174,28 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
   }, [symbol, fetchDetail]);
 
   // 处理K线数据
-  const chartData = candles.map(c => ({
-    date: c.timestamp.slice(0, 10),
-    open: c.open,
-    high: c.high,
-    low: c.low,
-    close: c.close,
-    volume: c.volume,
-    isUp: c.close >= c.open,
-  }));
+  const chartData = candles.map(c => {
+    // 根据不同周期格式化横坐标
+    let dateLabel: string;
+    if (period === '5m' || period === '15m') {
+      // 分时数据：显示小时:分钟
+      const ts = c.timestamp.replace(' ', 'T');
+      const d = new Date(ts);
+      dateLabel = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+    } else {
+      // 日周月线：显示日期
+      dateLabel = c.timestamp.slice(0, 10);
+    }
+    return {
+      date: dateLabel,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+      isUp: c.close >= c.open,
+    };
+  });
 
   // 计算K线Y轴范围
   const prices = chartData.flatMap(d => [d.high, d.low]).filter(Boolean);
@@ -291,7 +313,7 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
             <TabsContent value="chart" className="px-5 pb-5 mt-3">
               {/* Period Selector */}
               <div className="flex gap-1 mb-3">
-                {(['1d', '1w', '1M'] as const).map(p => (
+                {(['5m', '15m', '1d', '1w', '1M'] as const).map(p => (
                   <button
                     key={p}
                     onClick={() => setPeriod(p)}
@@ -301,7 +323,7 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
                         : 'bg-muted text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {p === '1d' ? '日线' : p === '1w' ? '周线' : '月线'}
+                    {p === '5m' ? '5分' : p === '15m' ? '15分' : p === '1d' ? '日线' : p === '1w' ? '周线' : '月线'}
                   </button>
                 ))}
               </div>

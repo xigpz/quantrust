@@ -1,7 +1,7 @@
 /**
  * FactorPanel - 因子库面板
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BarChart2, RefreshCw, Search, TrendingUp, TrendingDown, Activity } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -52,21 +52,31 @@ function FactorBar({ label, value, min, max, unit = '', goodDirection = 'high' }
 }
 
 export default function FactorPanel() {
-  const [symbol, setSymbol] = useState('600519');
-  const [searchInput, setSearchInput] = useState('600519');
+  // 从 localStorage 获取上一次的搜索内容
+  const [symbol, setSymbol] = useState(() => {
+    const saved = localStorage.getItem('factor_symbol');
+    return saved || '600519';
+  });
+  const [searchInput, setSearchInput] = useState(() => {
+    const saved = localStorage.getItem('factor_symbol');
+    return saved || '600519';
+  });
   const [data, setData] = useState<FactorData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = async () => {
-    if (!symbol.trim()) return;
+  const loadData = async (sym?: string) => {
+    const symToLoad = sym || symbol;
+    if (!symToLoad.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/factors/${encodeURIComponent(symbol)}`);
+      const res = await fetch(`/api/factors/${encodeURIComponent(symToLoad)}`);
       const json = await res.json();
       if (json.success) {
         setData(json.data);
+        // 保存到 localStorage
+        localStorage.setItem('factor_symbol', symToLoad);
       } else {
         setError(json.message);
       }
@@ -78,14 +88,16 @@ export default function FactorPanel() {
 
   const handleSearch = () => {
     if (searchInput.trim()) {
-      setSymbol(searchInput.trim().toUpperCase());
+      const newSymbol = searchInput.trim().toUpperCase();
+      setSymbol(newSymbol);
+      loadData(newSymbol);
     }
   };
 
   // 自动加载
-  useState(() => {
+  useEffect(() => {
     loadData();
-  });
+  }, []);
 
   const getRSIColor = (rsi: number) => {
     if (rsi < 30) return 'text-green-400';

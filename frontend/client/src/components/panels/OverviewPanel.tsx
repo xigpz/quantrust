@@ -138,7 +138,7 @@ export default function OverviewPanel() {
             <div key={stat.label} className="bg-card rounded-lg p-2.5 border border-border/50 text-center">
               <div className="text-[10px] text-muted-foreground mb-0.5">{stat.label}</div>
               <div className={`font-mono-data text-sm font-bold ${stat.color}`}>
-                {stat.value || '—'}
+                {stat.value ?? '—'}
               </div>
             </div>
           ))}

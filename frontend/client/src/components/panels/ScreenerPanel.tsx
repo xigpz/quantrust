@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Filter, RefreshCw, Search, TrendingUp, TrendingDown } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
+import { useStockClick } from '@/pages/Dashboard';
 
 interface ScreenerReq {
   min_pe?: number;
@@ -37,16 +38,17 @@ function formatNumber(num: number): string {
 
 export default function ScreenerPanel() {
   const [filters, setFilters] = useState<ScreenerReq>({
-    min_pe: 0,
-    max_pe: 50,
-    change_pct_min: 0,
-    min_volume: 10000000,
-    limit: 30,
+    min_pe: undefined,
+    max_pe: undefined,
+    change_pct_min: undefined,
+    min_volume: undefined,
+    limit: 50,
   });
   
   const [results, setResults] = useState<StockQuote[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const { openStock } = useStockClick();
 
   const updateFilter = (key: keyof ScreenerReq, value: number | undefined) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -143,7 +145,7 @@ export default function ScreenerPanel() {
           <div>
             <label className="text-xs text-muted-foreground">返回数量</label>
             <select
-              value={filters.limit ?? 30}
+              value={filters.limit ?? 50}
               onChange={(e) => updateFilter('limit', parseInt(e.target.value))}
               className="w-full mt-1 bg-background border border-border rounded px-2 py-1 text-xs"
             >
@@ -187,7 +189,7 @@ export default function ScreenerPanel() {
               </thead>
               <tbody>
                 {results.map((stock, idx) => (
-                  <tr key={idx} className="border-b border-border/50 hover:bg-accent/50 transition-colors cursor-pointer">
+                  <tr key={idx} onClick={() => openStock(stock.symbol, stock.name)} className="border-b border-border/50 hover:bg-accent/50 transition-colors cursor-pointer">
                     <td className="py-2 px-2">
                       <div className="font-medium">{stock.name}</div>
                       <div className="text-muted-foreground text-xs">{stock.symbol}</div>

@@ -54,7 +54,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/strategies/{id}", axum::routing::delete(delete_strategy))
         // 回测
         .route("/api/backtest", post(run_backtest))
-        .route("/api/momentum/:symbol", get(get_momentum))
+        .route("/api/momentum/{symbol}", get(get_momentum))
         .route("/api/backtest/history", get(get_backtest_history))
         // 风控
         .route("/api/risk/config", get(get_risk_config))
@@ -65,12 +65,12 @@ pub fn create_router(state: AppState) -> Router {
         // 选股器
         .route("/api/screener", post(screener_stocks))
         // 因子库
-        .route("/api/factors/:symbol", get(get_factors))
+        .route("/api/factors/{symbol}", get(get_factors))
         // 参数优化
         .route("/api/backtest/optimize", post(optimize_params))
         // 策略版本
-        .route("/api/strategies/:id/versions", get(get_strategy_versions))
-        .route("/api/strategies/:id/versions", post(create_strategy_version))
+        .route("/api/strategies/{id}/versions", get(get_strategy_versions))
+        .route("/api/strategies/{id}/versions", post(create_strategy_version))
         // 搜索
         .route("/api/search", get(search_stocks))
         .with_state(state)
@@ -750,27 +750,30 @@ async fn screener_stocks(
     let mut results: Vec<StockQuote> = quotes
         .iter()
         .filter(|q| {
-            // PE 筛选
+            // PE 筛选 - 只有设置了才筛选
             if let Some(min) = req.min_pe {
-                if q.pe_ratio <= 0.0 || q.pe_ratio < min { return false; }
+                if q.pe_ratio <= 0.0 || q.pe_ratio < min as f64 { return false; }
             }
             if let Some(max) = req.max_pe {
-                if q.pe_ratio <= 0.0 || q.pe_ratio > max { return false; }
+                if max > 0.0 && (q.pe_ratio <= 0.0 || q.pe_ratio > max as f64) { return false; }
             }
             
-            // PB 筛选 (使用 total_market_cap 作为近似)
+            // PB 筛选
             if let Some(max) = req.max_pb {
-                if q.total_market_cap <= 0.0 || q.total_market_cap > max * 1e8 { return false; }
+                if max > 0.0 {
+                    let pb = if q.price > 0.0 { q.total_market_cap / q.price } else { 0.0 };
+                    if pb <= 0.0 || pb > max as f64 { return false; }
+                }
             }
             
             // 涨跌幅筛选
             if let Some(min) = req.change_pct_min {
-                if q.change_pct < min { return false; }
+                if q.change_pct < min as f64 { return false; }
             }
             
             // 成交量筛选
             if let Some(min) = req.min_volume {
-                if q.volume < min { return false; }
+                if q.volume < min as f64 { return false; }
             }
             
             true
@@ -815,16 +818,27 @@ async fn get_factors(
     State(state): State<AppState>,
     Path(symbol): Path<String>,
 ) -> Json<ApiResponse<FactorData>> {
+    // 自动添加市场后缀
+    let symbol_with_suffix = if symbol.contains('.') {
+        symbol.clone()
+    } else if symbol.starts_with('6') {
+        format!("{}.SH", symbol)
+    } else if symbol.starts_with('0') || symbol.starts_with('3') {
+        format!("{}.SZ", symbol)
+    } else {
+        symbol.clone()
+    };
+    
     // 获取行情数据
     let quotes = state.cache.all_quotes.read().await;
-    let quote = quotes.iter().find(|q| q.symbol == symbol);
+    let quote = quotes.iter().find(|q| q.symbol == symbol_with_suffix);
     
     let pe = quote.map(|q| q.pe_ratio).unwrap_or(0.0);
     let price = quote.map(|q| q.price).unwrap_or(0.0);
     let change_pct = quote.map(|q| q.change_pct).unwrap_or(0.0);
     
     // 获取K线计算技术因子
-    let candles = state.provider.get_candles(&symbol, "101", 30).await.unwrap_or_default();
+    let candles = state.provider.get_candles(&symbol_with_suffix, "101", 30).await.unwrap_or_default();
     
     // 计算RSI
     let rsi_14 = if candles.len() >= 15 {

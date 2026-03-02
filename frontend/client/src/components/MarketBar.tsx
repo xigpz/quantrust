@@ -54,13 +54,13 @@ export default function MarketBar({ wsConnected, isDemo }: MarketBarProps) {
       {overview && (
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span>
-            涨 <span className="text-up font-mono-data">{overview.up_count || '—'}</span>
+            涨 <span className="text-up font-mono-data">{overview.up_count ?? '—'}</span>
           </span>
           <span>
-            跌 <span className="text-down font-mono-data">{overview.down_count || '—'}</span>
+            跌 <span className="text-down font-mono-data">{overview.down_count ?? '—'}</span>
           </span>
           <span>
-            平 <span className="font-mono-data">{overview.flat_count || '—'}</span>
+            平 <span className="font-mono-data">{overview.flat_count ?? '—'}</span>
           </span>
         </div>
       )}

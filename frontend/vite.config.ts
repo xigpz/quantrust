@@ -175,12 +175,12 @@ export default defineConfig({
     // In production, the frontend is served separately and VITE_API_BASE should be set
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8082',
         changeOrigin: true,
         // Don't proxy if VITE_API_BASE is set to a different host
       },
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: 'ws://localhost:8082',
         ws: true,
         changeOrigin: true,
       },

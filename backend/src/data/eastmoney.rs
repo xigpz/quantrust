@@ -198,7 +198,12 @@ impl EastMoneyApi {
             _ => "101",
         };
 
-        // 优先尝试 push2his，失败则回退到 push2delay
+        // 分钟级别数据直接使用新浪财经（东方财富不支持）
+        if period == "5m" || period == "15m" || period == "60m" {
+            return self.get_sina_candles(symbol, &market, &code, period, count).await;
+        }
+
+        // 日周月线优先尝试东方财富，失败则回退到新浪财经
         let urls = vec![
             format!(
                 "https://push2his.eastmoney.com/api/qt/stock/kline/get?\
@@ -218,6 +223,7 @@ impl EastMoneyApi {
             ),
         ];
 
+        // 先尝试东方财富
         for url in &urls {
             match self.fetch_json(url).await {
                 Ok(resp) => {
@@ -244,7 +250,7 @@ impl EastMoneyApi {
                         }
                     }
                     if !candles.is_empty() {
-                        tracing::info!("Fetched {} candles for {}", candles.len(), symbol);
+                        tracing::info!("Fetched {} candles for {} from EastMoney", candles.len(), symbol);
                         return Ok(candles);
                     }
                 }
@@ -255,7 +261,123 @@ impl EastMoneyApi {
             }
         }
 
+        // 回退到新浪财经
+        tracing::info!("Trying Sina finance as fallback for {}", symbol);
+        let sina_scale = match period {
+            "1d" | "daily" => "240",
+            "1w" | "weekly" => "240",
+            "1M" | "monthly" => "240",
+            "5m" => "5",
+            "15m" => "15",
+            "30m" => "30",
+            "60m" => "60",
+            _ => "240",
+        };
+        
+        let sina_symbol = if market == 1 { 
+            format!("sh{}", code) 
+        } else { 
+            format!("sz{}", code) 
+        };
+        
+        let sina_url = format!(
+            "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={}&scale={}&ma=5&datalen={}",
+            sina_symbol, sina_scale, count
+        );
+        
+        if let Ok(resp) = self.client.get(&sina_url).send().await {
+            if let Ok(text) = resp.text().await {
+                if text.starts_with('[') {
+                    if let Ok(data) = serde_json::from_str::<Vec<serde_json::Value>>(&text) {
+                        let mut candles: Vec<Candle> = data.iter().rev().map(|k| {
+                            Candle {
+                                symbol: symbol.to_string(),
+                                timestamp: k.get("day").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                open: k.get("open").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                close: k.get("close").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                high: k.get("high").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                low: k.get("low").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                volume: k.get("volume").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                turnover: 0.0,
+                            }
+                        }).collect();
+                        
+                        if !candles.is_empty() {
+                            tracing::info!("Fetched {} candles for {} from Sina", candles.len(), symbol);
+                            return Ok(candles);
+                        }
+                    }
+                }
+            }
+        }
+
         Err(anyhow::anyhow!("Failed to fetch candles for {} from all sources", symbol))
+    }
+
+    // 新浪财经获取K线数据（用于分钟级别）
+    async fn get_sina_candles(&self, symbol: &str, market: &u8, code: &str, period: &str, count: u32) -> Result<Vec<Candle>> {
+        tracing::info!("Fetching {} candles for {} from Sina", period, symbol);
+        
+        let sina_scale = match period {
+            "5m" | "1" => "5",
+            "15m" | "5" => "15",
+            "30m" | "30" => "30",
+            "60m" | "15" => "60",
+            _ => "240",
+        };
+        
+        let sina_symbol = if *market == 1 { 
+            format!("sh{}", code) 
+        } else { 
+            format!("sz{}", code) 
+        };
+        
+        let sina_url = format!(
+            "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={}&scale={}&ma=5&datalen={}",
+            sina_symbol, sina_scale, count
+        );
+        
+        if let Ok(resp) = self.client.get(&sina_url).send().await {
+            if let Ok(text) = resp.text().await {
+                if text.starts_with('[') {
+                    if let Ok(data) = serde_json::from_str::<Vec<serde_json::Value>>(&text) {
+                        // 获取今天的日期（YYYY-MM-DD格式）
+                        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                        
+                        let candles: Vec<Candle> = data.iter()
+                            .rev()  // 反转，最新的在前
+                            .filter(|k| {
+                                // 过滤：只保留今天的数据
+                                if let Some(day) = k.get("day").and_then(|v| v.as_str()) {
+                                    day.starts_with(&today)
+                                } else {
+                                    false
+                                }
+                            })
+                            .take(count as usize)
+                            .map(|k| {
+                                Candle {
+                                    symbol: symbol.to_string(),
+                                    timestamp: k.get("day").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                    open: k.get("open").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                    close: k.get("close").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                    high: k.get("high").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                    low: k.get("low").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                    volume: k.get("volume").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0),
+                                    turnover: 0.0,
+                                }
+                            }).collect();
+                        
+                        if !candles.is_empty() {
+                            tracing::info!("Fetched {} {} candles for {} from Sina", candles.len(), today, symbol);
+                            return Ok(candles);
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("Failed to fetch candles for {} from Sina", symbol))
     }
 
     /// 获取板块行情
@@ -435,53 +557,55 @@ impl EastMoneyApi {
 
         // 2. 统计涨跌平家数 + 涨跌停家数
         //
-        // 这里直接使用东方财富提供的列表接口来统计，与官网口径保持一致：
-        // - 同样的 fs 过滤条件
-        // - 同样的 pz（5000）配置
-        let stats_url = "https://82.push2delay.eastmoney.com/api/qt/clist/get?\
-            pn=1&pz=5000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281\
-            &fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048\
-            &fields=f3";
-
-        let (mut up_count, mut down_count, mut flat_count, mut limit_up, mut limit_down) = (0, 0, 0, 0, 0);
-
-        if let Ok(stats_resp) = self.fetch_json(stats_url).await {
-            if let Some(data) = stats_resp.get("data") {
-                if let Some(diff) = data.get("diff").and_then(|d| d.as_array()) {
-                    let mut total = 0_i32;
-                    for item in diff {
-                        let pct = item["f3"].as_f64().unwrap_or(0.0);
-                        total += 1;
-
-                        if pct > 0.0 {
-                            up_count += 1;
-                        } else if pct < 0.0 {
-                            down_count += 1;
-                        } else {
-                            flat_count += 1;
+        // 东方财富 API 每次只返回 100 条，需要分页获取全部 5800+ 股票
+        let mut up_count = 0i32;
+        let mut down_count = 0i32;
+        let mut flat_count = 0i32;
+        let mut limit_up = 0i32;
+        let mut limit_down = 0i32;
+        
+        // 分页获取所有股票数据，每页 100 条
+        for page in 1..=60 {
+            let stats_url = format!(
+                "https://82.push2delay.eastmoney.com/api/qt/clist/get?\
+                pn={}&pz=100&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281\
+                &fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048\
+                &fields=f3",
+                page
+            );
+            
+            if let Ok(stats_resp) = self.fetch_json(&stats_url).await {
+                if let Some(data) = stats_resp.get("data") {
+                    if let Some(diff) = data.get("diff").and_then(|d| d.as_array()) {
+                        if diff.is_empty() {
+                            break; // 没有更多数据
                         }
-                        if pct >= 9.9 {
-                            limit_up += 1;
+                        
+                        for item in diff {
+                            let pct = item["f3"].as_f64().unwrap_or(0.0);
+
+                            if pct > 0.0 {
+                                up_count += 1;
+                            } else if pct < 0.0 {
+                                down_count += 1;
+                            } else {
+                                flat_count += 1;
+                            }
+                            if pct >= 9.9 {
+                                limit_up += 1;
+                            }
+                            if pct <= -9.9 {
+                                limit_down += 1;
+                            }
                         }
-                        if pct <= -9.9 {
-                            limit_down += 1;
-                        }
+                    } else {
+                        break;
                     }
-
-                    // 如果返回的股票数量太少（例如收盘后接口不再返回全市场），
-                    // 则认为统计数据不可靠，统一置零，让前端显示为「—」。
-                    if total < 1000 {
-                        tracing::warn!(
-                            "Market stats seem incomplete (only {} symbols), resetting counts to 0",
-                            total
-                        );
-                        up_count = 0;
-                        down_count = 0;
-                        flat_count = 0;
-                        limit_up = 0;
-                        limit_down = 0;
-                    }
+                } else {
+                    break;
                 }
+            } else {
+                break;
             }
         }
 
@@ -497,8 +621,8 @@ impl EastMoneyApi {
 
         let total_turnover = sh.turnover + sz.turnover;
 
-        tracing::info!("Market overview: SH={:.2}, SZ={:.2}, CYB={:.2}, Up={}, Down={}", 
-            sh.price, sz.price, cyb.price, up_count, down_count);
+        tracing::info!("Market overview: SH={:.2}, SZ={:.2}, CYB={:.2}, Up={}, Down={}, Flat={}, LimitUp={}, LimitDown={}", 
+            sh.price, sz.price, cyb.price, up_count, down_count, flat_count, limit_up, limit_down);
 
         Ok(MarketOverview {
             sh_index: sh,
