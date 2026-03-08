@@ -113,16 +113,16 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [moneyFlow, setMoneyFlow] = useState<MoneyFlowDetail | null>(null);
+  const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [period, setPeriod] = useState<'5m' | '15m' | '1d' | '1w' | '1M'>('1d');
+  const [period, setPeriod] = useState<'1m' | '5m' | '15m' | '1d'>('1d');
   
-  // period 对应的 API 参数
+  // period 对应的 API 参数 (直接使用 period 字符串)
   const periodMap = {
-    '5m': { api: '1', count: 80 },     // 5分钟
-    '15m': { api: '5', count: 80 },    // 15分钟
-    '1d': { api: '101', count: 90 },   // 日线
-    '1w': { api: '102', count: 52 },   // 周线
-    '1M': { api: '103', count: 24 },   // 月线
+    '1m': { count: 240 },    // 1分钟
+    '5m': { count: 240 },    // 5分钟
+    '15m': { count: 80 },    // 15分钟
+    '1d': { count: 90 },    // 日线
   };
   const [favLoading, setFavLoading] = useState(false);
   const [isFav, setIsFav] = useState(false);
@@ -131,11 +131,12 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
     if (!symbol) return;
     setLoading(true);
     try {
-      const [detailRes, candleRes, flowRes, watchlistRes] = await Promise.allSettled([
+      const [detailRes, candleRes, flowRes, watchlistRes, newsRes] = await Promise.allSettled([
         fetch(`${API_BASE}/api/quotes/${symbol}`).then(r => r.json()),
-        fetch(`${API_BASE}/api/candles/${symbol}?period=${periodMap[period].api}&count=${periodMap[period].count}`).then(r => r.json()),
+        fetch(`${API_BASE}/api/candles/${symbol}?period=${period}&count=${periodMap[period].count}`).then(r => r.json()),
         fetch(`${API_BASE}/api/money-flow`).then(r => r.json()),
         fetch(`${API_BASE}/api/watchlist`).then(r => r.json()),
+        fetch(`${API_BASE}/api/news/${symbol}`).then(r => r.json()),
       ]);
 
       if (detailRes.status === 'fulfilled' && detailRes.value.success) {
@@ -157,6 +158,11 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
       } else {
         setIsFav(false);
       }
+      if (newsRes.status === 'fulfilled' && newsRes.value.success) {
+        setNews(newsRes.value.data || []);
+      } else {
+        setNews([]);
+      }
     } catch (e) {
       console.error('Failed to fetch stock detail', e);
     } finally {
@@ -173,11 +179,13 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
     }
   }, [symbol, fetchDetail]);
 
-  // 处理K线数据
-  const chartData = candles.map(c => {
+  // 处理K线数据 - 所有周期数据返回都是降序，需要反转成升序
+  const sortedCandles = [...candles].reverse();
+  
+  const chartData = sortedCandles.map(c => {
     // 根据不同周期格式化横坐标
     let dateLabel: string;
-    if (period === '5m' || period === '15m') {
+    if (period === '1m' || period === '5m' || period === '15m') {
       // 分时数据：显示小时:分钟
       const ts = c.timestamp.replace(' ', 'T');
       const d = new Date(ts);
@@ -307,13 +315,14 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
               <TabsTrigger value="chart" className="text-xs">K线图</TabsTrigger>
               <TabsTrigger value="info" className="text-xs">基本信息</TabsTrigger>
               <TabsTrigger value="flow" className="text-xs">资金流向</TabsTrigger>
+              <TabsTrigger value="news" className="text-xs">新闻公告</TabsTrigger>
             </TabsList>
 
             {/* K线图 Tab */}
             <TabsContent value="chart" className="px-5 pb-5 mt-3">
               {/* Period Selector */}
               <div className="flex gap-1 mb-3">
-                {(['5m', '15m', '1d', '1w', '1M'] as const).map(p => (
+                {(['1m', '5m', '15m', '1d'] as const).map(p => (
                   <button
                     key={p}
                     onClick={() => setPeriod(p)}
@@ -323,7 +332,7 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
                         : 'bg-muted text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {p === '5m' ? '5分' : p === '15m' ? '15分' : p === '1d' ? '日线' : p === '1w' ? '周线' : '月线'}
+                    {p === '1m' ? '1分' : p === '5m' ? '5分' : p === '15m' ? '15分' : '日线'}
                   </button>
                 ))}
               </div>
@@ -506,6 +515,48 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
                   )}
                 </div>
               )}
+            </TabsContent>
+
+            {/* 新闻公告 Tab */}
+            <TabsContent value="news" className="mt-4">
+              <div className="max-h-80 overflow-y-auto">
+                {news && news.length > 0 ? (
+                  <div className="space-y-2">
+                    {news.map((item, idx) => (
+                      <a
+                        key={idx}
+                        href={item.url || `https://guba.eastmoney.com/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium line-clamp-2">{item.title}</div>
+                            {item.pub_date && (
+                              <div className="text-xs text-muted-foreground mt-1">{item.pub_date}</div>
+                            )}
+                          </div>
+                          <span className="shrink-0 px-2 py-0.5 text-xs rounded bg-secondary">
+                            {item.news_type}
+                          </span>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-40 flex items-center justify-center text-muted-foreground text-sm">
+                    {loading ? (
+                      <div className="flex items-center gap-2">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>加载新闻...</span>
+                      </div>
+                    ) : (
+                      <span>该股票暂无新闻数据</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
         </div>

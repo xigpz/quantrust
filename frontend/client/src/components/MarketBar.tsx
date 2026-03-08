@@ -8,9 +8,10 @@ import { Activity, TrendingUp, TrendingDown, Wifi, WifiOff } from 'lucide-react'
 interface MarketBarProps {
   wsConnected: boolean;
   isDemo?: boolean;
+  className?: string;
 }
 
-export default function MarketBar({ wsConnected, isDemo }: MarketBarProps) {
+export default function MarketBar({ wsConnected, isDemo, className = '' }: MarketBarProps) {
   const { data: overview } = useMarketOverview();
 
   const indices = overview ? [
@@ -20,22 +21,22 @@ export default function MarketBar({ wsConnected, isDemo }: MarketBarProps) {
   ] : [];
 
   return (
-    <header className="h-10 bg-card border-b border-border flex items-center px-4 gap-6 shrink-0">
+    <header className={`h-10 bg-card border-b border-border flex items-center px-4 gap-6 shrink-0 ${className}`}>
       {/* Logo */}
       <div className="flex items-center gap-2 mr-2">
         <Activity className="w-4 h-4 text-primary" />
-        <span className="font-semibold text-sm tracking-tight">QuantRust</span>
+        <span className="font-semibold text-sm tracking-tight text-foreground">QuantRust</span>
       </div>
 
       {/* Index Quotes */}
       <div className="flex items-center gap-5">
         {indices.map((idx) => (
           <div key={idx.code} className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{idx.label}</span>
-            <span className={`font-mono-data text-sm font-medium ${getChangeColor(idx.change_pct)}`}>
+            <span className="text-xs text-foreground/70">{idx.label}</span>
+            <span className={`font-mono-data text-sm font-semibold ${getChangeColor(idx.change_pct)}`}>
               {formatPrice(idx.price)}
             </span>
-            <span className={`font-mono-data text-xs ${getChangeColor(idx.change_pct)}`}>
+            <span className={`font-mono-data text-xs font-medium ${getChangeColor(idx.change_pct)}`}>
               {formatPercent(idx.change_pct)}
             </span>
             {idx.change_pct > 0 ? (
@@ -52,15 +53,15 @@ export default function MarketBar({ wsConnected, isDemo }: MarketBarProps) {
 
       {/* Market Stats */}
       {overview && (
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-4 text-xs text-foreground/80">
           <span>
-            涨 <span className="text-up font-mono-data">{overview.up_count ?? '—'}</span>
+            涨 <span className="text-up font-mono-data font-semibold">{overview.up_count ?? '—'}</span>
           </span>
           <span>
-            跌 <span className="text-down font-mono-data">{overview.down_count ?? '—'}</span>
+            跌 <span className="text-down font-mono-data font-semibold">{overview.down_count ?? '—'}</span>
           </span>
           <span>
-            平 <span className="font-mono-data">{overview.flat_count ?? '—'}</span>
+            平 <span className="font-mono-data font-semibold">{overview.flat_count ?? '—'}</span>
           </span>
         </div>
       )}

@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
@@ -15,6 +16,7 @@ pub struct SimState {
     pub trades: Mutex<Vec<Trade>>,
     pub next_order_id: Mutex<u64>,
     pub next_trade_id: Mutex<u64>,
+    pub current_user: Mutex<String>,
 }
 
 impl Default for SimState {
@@ -26,6 +28,7 @@ impl Default for SimState {
             trades: Mutex::new(Vec::new()),
             next_order_id: Mutex::new(1),
             next_trade_id: Mutex::new(1),
+            current_user: Mutex::new("guest".to_string()),
         }
     }
 }
@@ -51,6 +54,11 @@ pub fn create_sim_router(state: AppState) -> Router {
         .route("/api/sim/orders", post(create_order))
         .route("/api/sim/orders/{id}/cancel", post(cancel_order))
         .route("/api/sim/trades", get(get_trades))
+        // 排行榜
+        .route("/api/sim/leaderboard", get(get_leaderboard))
+        .route("/api/sim/leaderboard/update", post(update_leaderboard))
+        .route("/api/sim/user/set", post(set_username))
+        .route("/api/sim/user/stats", get(get_my_stats))
         .with_state(state)
 }
 
@@ -167,4 +175,164 @@ async fn cancel_order(State(state): State<AppState>, Path(id): Path<String>) -> 
     let mut os = state.sim_state.orders.lock().unwrap();
     if let Some(o) = os.iter_mut().find(|o|o.id==id) { if o.status=="pending" { o.status="cancelled".to_string(); o.updated_at=Utc::now().to_rfc3339(); return Json(serde_json::json!({"success":true,"message":"已取消"})); } }
     Json(serde_json::json!({"success":false,"message":"无法取消"}))
+}
+
+// ==================== 排行榜相关 ====================
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LeaderboardEntry {
+    pub rank: i32,
+    pub username: String,
+    pub current_capital: f64,
+    pub total_return: f64,
+    pub return_rate: f64,
+    pub total_trades: i32,
+    pub win_count: i32,
+    pub loss_count: i32,
+    pub win_rate: f64,
+    pub positions_count: i32,
+    pub updated_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct SetUserReq {
+    pub username: String,
+}
+
+// 更新排行榜记录
+async fn update_leaderboard(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let username = state.sim_state.current_user.lock().unwrap().clone();
+    let account = state.sim_state.account.lock().unwrap().clone();
+    let trades = state.sim_state.trades.lock().unwrap().clone();
+    let positions = state.sim_state.positions.lock().unwrap().clone();
+    
+    let initial_capital = 1_000_000.0;
+    let current_capital = account.total_value;
+    let total_return = current_capital - initial_capital;
+    let return_rate = (total_return / initial_capital) * 100.0;
+    let total_trades = trades.len() as i32;
+    
+    // 计算胜率
+    let mut win_count = 0i32;
+    let mut loss_count = 0i32;
+    // 简单逻辑：按买入后卖出计算盈亏
+    for i in (0..trades.len()).step_by(2) {
+        if i + 1 < trades.len() {
+            let buy = &trades[i];
+            let sell = &trades[i + 1];
+            if buy.direction == "buy" && sell.direction == "sell" {
+                if sell.price > buy.price {
+                    win_count += 1;
+                } else {
+                    loss_count += 1;
+                }
+            }
+        }
+    }
+    let win_rate = if total_trades > 0 { (win_count as f64 / total_trades as f64) * 100.0 } else { 0.0 };
+    let positions_count = positions.iter().filter(|p| p.quantity > 0.0).count() as i32;
+    
+    let db = state.db.lock().unwrap();
+    let now = Utc::now().to_rfc3339();
+    
+    // Upsert: 插入或更新
+    let result = db.execute(
+        "INSERT INTO sim_leaderboard (username, initial_capital, current_capital, total_return, return_rate, total_trades, win_count, loss_count, win_rate, positions_count, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT(username) DO UPDATE SET
+         current_capital = excluded.current_capital,
+         total_return = excluded.total_return,
+         return_rate = excluded.return_rate,
+         total_trades = excluded.total_trades,
+         win_count = excluded.win_count,
+         loss_count = excluded.loss_count,
+         win_rate = excluded.win_rate,
+         positions_count = excluded.positions_count,
+         updated_at = excluded.updated_at",
+        params![username, initial_capital, current_capital, total_return, return_rate, total_trades, win_count, loss_count, win_rate, positions_count, now],
+    );
+    
+    match result {
+        Ok(_) => Json(serde_json::json!({ "success": true, "message": "排行榜已更新" })),
+        Err(e) => Json(serde_json::json!({ "success": false, "message": format!("更新失败: {}", e) })),
+    }
+}
+
+// 获取排行榜
+async fn get_leaderboard(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let db = state.db.lock().unwrap();
+    
+    let mut stmt = match db.prepare(
+        "SELECT username, current_capital, total_return, return_rate, total_trades, win_count, loss_count, win_rate, positions_count, updated_at 
+         FROM sim_leaderboard 
+         ORDER BY return_rate DESC 
+         LIMIT 50"
+    ) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({ "success": false, "message": format!("查询失败: {}", e) })),
+    };
+    
+    let entries = stmt.query_map([], |row| {
+        Ok(LeaderboardEntry {
+            rank: 0, // 后面再设置
+            username: row.get(0)?,
+            current_capital: row.get(1)?,
+            total_return: row.get(2)?,
+            return_rate: row.get(3)?,
+            total_trades: row.get(4)?,
+            win_count: row.get(5)?,
+            loss_count: row.get(6)?,
+            win_rate: row.get(7)?,
+            positions_count: row.get(8)?,
+            updated_at: row.get(9)?,
+        })
+    });
+    
+    match entries {
+        Ok(rows) => {
+            let mut result: Vec<LeaderboardEntry> = rows.filter_map(|r| r.ok()).collect();
+            // 设置排名
+            for (i, entry) in result.iter_mut().enumerate() {
+                entry.rank = (i + 1) as i32;
+            }
+            Json(serde_json::json!({ "success": true, "data": result }))
+        }
+        Err(e) => Json(serde_json::json!({ "success": false, "message": format!("查询失败: {}", e) })),
+    }
+}
+
+// 设置当前用户名
+async fn set_username(State(state): State<AppState>, Json(req): Json<SetUserReq>) -> Json<serde_json::Value> {
+    let mut username = state.sim_state.current_user.lock().unwrap();
+    *username = req.username.clone();
+    Json(serde_json::json!({ "success": true, "message": format!("用户名已设置为: {}", req.username) }))
+}
+
+// 获取当前用户信息
+async fn get_my_stats(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let username = state.sim_state.current_user.lock().unwrap().clone();
+    let account = state.sim_state.account.lock().unwrap().clone();
+    let trades = state.sim_state.trades.lock().unwrap().clone();
+    let positions = state.sim_state.positions.lock().unwrap().clone();
+    
+    let initial_capital = 1_000_000.0;
+    let current_capital = account.total_value;
+    let total_return = current_capital - initial_capital;
+    let return_rate = (total_return / initial_capital) * 100.0;
+    let total_trades = trades.len() as i32;
+    let positions_count = positions.iter().filter(|p| p.quantity > 0.0).count() as i32;
+    
+    Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "username": username,
+            "current_capital": current_capital,
+            "total_return": total_return,
+            "return_rate": return_rate,
+            "total_trades": total_trades,
+            "positions_count": positions_count,
+            "cash": account.cash,
+            "positions_value": account.positions_value,
+        }
+    }))
 }

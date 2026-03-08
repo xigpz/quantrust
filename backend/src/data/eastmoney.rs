@@ -198,8 +198,8 @@ impl EastMoneyApi {
             _ => "101",
         };
 
-        // 分钟级别数据直接使用新浪财经（东方财富不支持）
-        if period == "5m" || period == "15m" || period == "60m" {
+        // 分钟级别数据直接使用新浪财经
+        if period == "1m" || period == "5m" || period == "15m" || period == "60m" {
             return self.get_sina_candles(symbol, &market, &code, period, count).await;
         }
 
@@ -416,6 +416,54 @@ impl EastMoneyApi {
 
         tracing::info!("Fetched {} sectors", sectors.len());
         Ok(sectors)
+    }
+
+    /// 获取板块成分股
+    /// bk_code: 板块代码，如 "BK0891"（新能源板块）
+    pub async fn get_sector_stocks(&self, bk_code: &str) -> Result<Vec<StockQuote>> {
+        let url = format!(
+            "https://82.push2delay.eastmoney.com/api/qt/clist/get?\
+            pn=1&pz=100&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281\
+            &fltt=2&invt=2&fid=f3&fs=b:{bk_code}\
+            &fields=f2,f3,f4,f5,f6,f7,f8,f9,f12,f13,f14,f15,f16,f17,f18,f20,f21",
+            bk_code = bk_code
+        );
+
+        let resp = self.fetch_json(&url).await?;
+        let mut stocks = Vec::new();
+
+        if let Some(data) = resp.get("data") {
+            if let Some(diff) = data.get("diff").and_then(|d| d.as_array()) {
+                for item in diff {
+                    stocks.push(StockQuote {
+                        symbol: item["f12"].as_str().unwrap_or("").to_string(),
+                        name: item["f14"].as_str().unwrap_or("").to_string(),
+                        price: item["f2"].as_f64().unwrap_or(0.0),
+                        change_pct: item["f3"].as_f64().unwrap_or(0.0),
+                        change: item["f4"].as_f64().unwrap_or(0.0),
+                        open: item["f17"].as_f64().unwrap_or(0.0),
+                        high: item["f15"].as_f64().unwrap_or(0.0),
+                        low: item["f16"].as_f64().unwrap_or(0.0),
+                        pre_close: 0.0,
+                        volume: item["f5"].as_f64().unwrap_or(0.0),
+                        turnover: item["f8"].as_f64().unwrap_or(0.0),
+                        turnover_rate: 0.0,
+                        amplitude: 0.0,
+                        pe_ratio: 0.0,
+                        total_market_cap: 0.0,
+                        circulating_market_cap: 0.0,
+                        timestamp: Utc::now(),
+                        bid_prices: vec![],
+                        bid_volumes: vec![],
+                        ask_prices: vec![],
+                        ask_volumes: vec![],
+                    });
+                }
+            }
+        }
+
+        tracing::info!("Fetched {} stocks in sector {}", stocks.len(), bk_code);
+        Ok(stocks)
     }
 
     /// 获取涨停板数据

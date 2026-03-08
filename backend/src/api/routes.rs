@@ -11,6 +11,7 @@ use crate::services::backtest::{BacktestEngine, OptimizationResult as BtOptimiza
 use crate::services::momentum::MomentumStrategy;
 use crate::services::risk::{RiskManager, RiskConfig, RiskReport};
 use crate::services::financial::{DragonTigerService, DragonTigerData, FinancialService, FinancialFilter, FinancialData};
+use crate::services::news_analyzer::{NewsAnalyzer, AnomalyPrediction, Sentiment};
 use crate::models::*;
 use crate::db::DbPool;
 use crate::sim::SimState;
@@ -39,6 +40,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/anomalies", get(get_anomalies))
         // 板块行情
         .route("/api/sectors", get(get_sectors))
+        .route("/api/sectors/{code}/stocks", get(get_sector_stocks))
         // 资金流向
         .route("/api/money-flow", get(get_money_flow))
         // 涨停板
@@ -68,11 +70,15 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/factors/{symbol}", get(get_factors))
         // 参数优化
         .route("/api/backtest/optimize", post(optimize_params))
+        // AutoML 因子选择
+        .route("/api/factors/automl", post(automl_factor_selection))
         // 策略版本
         .route("/api/strategies/{id}/versions", get(get_strategy_versions))
         .route("/api/strategies/{id}/versions", post(create_strategy_version))
         // 搜索
         .route("/api/search", get(search_stocks))
+        // 异动预测
+        .route("/api/anomaly/predictions", get(get_anomaly_predictions))
         .with_state(state)
 }
 
@@ -114,6 +120,19 @@ fn err_response<T: Serialize + Default>(msg: &str) -> Json<ApiResponse<T>> {
     Json(ApiResponse {
         success: false,
         data: T::default(),
+        message: msg.to_string(),
+    })
+}
+
+fn err_response_msg(msg: &str) -> Json<ApiResponse<AutoMLResult>> {
+    Json(ApiResponse {
+        success: false,
+        data: AutoMLResult {
+            selected_factors: vec![],
+            all_factors: vec![],
+            method: "".to_string(),
+            sample_size: 0,
+        },
         message: msg.to_string(),
     })
 }
@@ -210,6 +229,17 @@ async fn get_sectors(
 ) -> Json<ApiResponse<Vec<SectorInfo>>> {
     let sectors = state.cache.sectors.read().await.clone();
     ok_response(sectors)
+}
+
+/// 获取板块成分股
+async fn get_sector_stocks(
+    State(state): State<AppState>,
+    Path(code): Path<String>,
+) -> Json<ApiResponse<Vec<StockQuote>>> {
+    match state.provider.get_sector_stocks(&code).await {
+        Ok(stocks) => ok_response(stocks),
+        Err(e) => err_response(&format!("获取板块成分股失败: {}", e)),
+    }
 }
 
 /// 获取资金流向
@@ -320,6 +350,58 @@ async fn search_stocks(
         .collect();
 
     ok_response(results)
+}
+
+/// 获取异动预测
+async fn get_anomaly_predictions(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<Vec<AnomalyPrediction>>> {
+    let quotes = state.cache.all_quotes.read().await;
+    let mut predictions = Vec::new();
+    
+    // 基于市场数据预测
+    for quote in quotes.iter() {
+        let pt: String;
+        let urgency: String;
+        let reason: String;
+        let label: String;
+        
+        if quote.change_pct >= 8.0 && quote.change_pct < 9.5 {
+            pt = "即将涨停".to_string();
+            urgency = "高".to_string();
+            reason = format!("涨幅{}%，有望冲击涨停", quote.change_pct);
+            label = "利好".to_string();
+        } else if quote.change_pct <= -7.0 {
+            pt = "风险警示".to_string();
+            urgency = "高".to_string();
+            reason = format!("跌幅{}%，注意风险", quote.change_pct);
+            label = "利空".to_string();
+        } else if quote.turnover > 15.0 && quote.change_pct.abs() > 3.0 {
+            pt = "放量异动".to_string();
+            urgency = "中".to_string();
+            reason = format!("换手率{}%，成交量异常放大", quote.turnover);
+            label = if quote.change_pct > 0.0 { "利好".to_string() } else { "利空".to_string() };
+        } else {
+            continue;
+        }
+        
+        predictions.push(AnomalyPrediction {
+            symbol: quote.symbol.clone(),
+            name: quote.name.clone(),
+            pred_type: pt,
+            sentiment: Sentiment {
+                score: quote.change_pct / 100.0,
+                label,
+                keywords: vec![],
+            },
+            urgency,
+            timestamp: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            reason,
+        });
+    }
+    
+    predictions.truncate(20);
+    ok_response(predictions)
 }
 
 /// 回测请求
@@ -807,7 +889,19 @@ pub struct FactorData {
     // 技术因子
     pub rsi_14: f64,
     pub macd: f64,
+    pub macd_signal: f64,
+    pub macd_hist: f64,
     pub volatility_20: f64,
+    // 新增技术因子
+    pub kdj_k: f64,
+    pub kdj_d: f64,
+    pub kdj_j: f64,
+    pub boll_upper: f64,
+    pub boll_middle: f64,
+    pub boll_lower: f64,
+    pub atr: f64,
+    pub williams_r: f64,
+    pub cci: f64,
     // 风险因子
     pub beta: f64,
     pub debt_ratio: f64,
@@ -848,7 +942,7 @@ async fn get_factors(
     };
     
     // 计算MACD
-    let macd = if candles.len() >= 26 {
+    let macd_result = if candles.len() >= 26 {
         calculate_macd(&candles)
     } else {
         0.0
@@ -857,6 +951,41 @@ async fn get_factors(
     // 计算波动率
     let volatility_20 = if candles.len() >= 20 {
         calculate_volatility(&candles, 20)
+    } else {
+        0.0
+    };
+    
+    // 计算KDJ
+    let (kdj_k, kdj_d, kdj_j) = if candles.len() >= 9 {
+        calculate_kdj(&candles)
+    } else {
+        (50.0, 50.0, 50.0)
+    };
+    
+    // 计算布林带
+    let (boll_upper, boll_middle, boll_lower) = if candles.len() >= 20 {
+        calculate_bollinger_bands(&candles, 20)
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+    
+    // 计算ATR
+    let atr = if candles.len() >= 14 {
+        calculate_atr(&candles, 14)
+    } else {
+        0.0
+    };
+    
+    // 计算威廉指标
+    let williams_r = if candles.len() >= 14 {
+        calculate_williams_r(&candles, 14)
+    } else {
+        -50.0
+    };
+    
+    // 计算CCI
+    let cci = if candles.len() >= 14 {
+        calculate_cci(&candles, 14)
     } else {
         0.0
     };
@@ -873,8 +1002,19 @@ async fn get_factors(
         revenue_growth: change_pct * 0.8,
         profit_growth: change_pct * 0.6,
         rsi_14,
-        macd,
+        macd: macd_result,
+        macd_signal: macd_result * 0.8,  // 简化
+        macd_hist: macd_result * 0.2,      // 简化
         volatility_20,
+        kdj_k,
+        kdj_d,
+        kdj_j,
+        boll_upper,
+        boll_middle,
+        boll_lower,
+        atr,
+        williams_r,
+        cci,
         beta: 1.0 + (change_pct * 0.05).max(-0.3).min(0.3),
         debt_ratio: 50.0,
     };
@@ -914,6 +1054,75 @@ fn calculate_volatility(candles: &[Candle], period: usize) -> f64 {
     let mean = closes.iter().sum::<f64>() / period as f64;
     let variance = closes.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / period as f64;
     (variance.sqrt() / mean) * 100.0
+}
+
+/// 计算KDJ指标
+fn calculate_kdj(candles: &[Candle]) -> (f64, f64, f64) {
+    if candles.len() < 9 { return (50.0, 50.0, 50.0); }
+    let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
+    let mut k_values = Vec::new();
+    
+    for i in 8..closes.len() {
+        let window = &closes[i-8..=i];
+        let low = window.iter().cloned().fold(f64::INFINITY, f64::min);
+        let high = window.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let rsv = if high != low { (closes[i] - low) / (high - low) * 100.0 } else { 50.0 };
+        k_values.push(rsv);
+    }
+    
+    let k = k_values.iter().rev().take(3).sum::<f64>() / 3.0;
+    let d = k_values.iter().rev().skip(1).take(3).sum::<f64>() / 3.0;
+    let j = 3.0 * k - 2.0 * d;
+    (k, d, j)
+}
+
+/// 计算布林带
+fn calculate_bollinger_bands(candles: &[Candle], period: usize) -> (f64, f64, f64) {
+    if candles.len() < period { return (0.0, 0.0, 0.0); }
+    let closes: Vec<f64> = candles.iter().rev().take(period).map(|c| c.close).collect();
+    let mean = closes.iter().sum::<f64>() / period as f64;
+    let variance = closes.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / period as f64;
+    let std = variance.sqrt();
+    let upper = mean + 2.0 * std;
+    let lower = mean - 2.0 * std;
+    (upper, mean, lower)
+}
+
+/// 计算ATR (平均真实波幅)
+fn calculate_atr(candles: &[Candle], period: usize) -> f64 {
+    if candles.len() < period + 1 { return 0.0; }
+    let mut tr_values = Vec::new();
+    for i in 1..candles.len() {
+        let high = candles[i].high;
+        let low = candles[i].low;
+        let prev_close = candles[i-1].close;
+        let tr = (high - low).max((high - prev_close).abs()).max((low - prev_close).abs());
+        tr_values.push(tr);
+    }
+    tr_values.iter().rev().take(period).sum::<f64>() / period as f64
+}
+
+/// 计算威廉指标
+fn calculate_williams_r(candles: &[Candle], period: usize) -> f64 {
+    if candles.len() < period { return -50.0; }
+    let window: Vec<f64> = candles.iter().rev().take(period).map(|c| c.close).collect();
+    let high = window.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let low = window.iter().cloned().fold(f64::INFINITY, f64::min);
+    let current = window[0];
+    if high == low { return -50.0; }
+    -((high - current) / (high - low) * 100.0)
+}
+
+/// 计算CCI (商品通道指数)
+fn calculate_cci(candles: &[Candle], period: usize) -> f64 {
+    if candles.len() < period { return 0.0; }
+    let mut typical_prices: Vec<f64> = candles.iter().map(|c| (c.high + c.low + c.close) / 3.0).collect();
+    typical_prices.reverse();
+    let window = &typical_prices[0..period];
+    let sma = window.iter().sum::<f64>() / period as f64;
+    let mean_deviation = window.iter().map(|x| (x - sma).abs()).sum::<f64>() / period as f64;
+    if mean_deviation == 0.0 { return 0.0; }
+    (typical_prices[0] - sma) / (0.015 * mean_deviation)
 }
 
 // ============ 参数优化 API ============
@@ -977,6 +1186,248 @@ async fn optimize_params(
     }).collect();
     
     ok_response(results)
+}
+
+// ============ AutoML 因子选择 API ============
+
+#[derive(Deserialize)]
+pub struct AutoMLReq {
+    pub symbols: Vec<String>,
+    pub target: String,  // 预测目标: "return_5d", "return_20d", "updown"
+    pub factor_pool: Option<Vec<String>>,
+    pub method: Option<String>,  // "correlation", "importance", "greedy"
+}
+
+/// AutoML 因子选择结果
+#[derive(Serialize, Clone)]
+pub struct FactorImportance {
+    pub factor: String,
+    pub importance: f64,
+    pub correlation: f64,
+    pub selected: bool,
+}
+
+#[derive(Serialize)]
+pub struct AutoMLResult {
+    pub selected_factors: Vec<FactorImportance>,
+    pub all_factors: Vec<FactorImportance>,
+    pub method: String,
+    pub sample_size: usize,
+}
+
+/// AutoML 自动因子选择
+async fn automl_factor_selection(
+    State(state): State<AppState>,
+    Json(req): Json<AutoMLReq>,
+) -> Json<ApiResponse<AutoMLResult>> {
+    let method = req.method.unwrap_or_else(|| "importance".to_string());
+    let target = req.target.clone();
+    
+    // 默认因子池
+    let default_factors: Vec<String> = vec![
+        "pe".to_string(), "pb".to_string(), "roe".to_string(), "roa".to_string(), 
+        "gross_margin".to_string(), "net_margin".to_string(),
+        "revenue_growth".to_string(), "profit_growth".to_string(), "rsi_14".to_string(), 
+        "macd".to_string(), "volatility_20".to_string(),
+        "kdj_k".to_string(), "kdj_d".to_string(), "boll_upper".to_string(), 
+        "atr".to_string(), "williams_r".to_string(), "cci".to_string()
+    ];
+    let factor_pool = req.factor_pool.unwrap_or(default_factors);
+    
+    // 收集所有股票的因子数据
+    let mut all_data: Vec<std::collections::HashMap<String, f64>> = Vec::new();
+    
+    for symbol in &req.symbols {
+        let symbol_with_suffix = if symbol.contains('.') {
+            symbol.clone()
+        } else if symbol.starts_with('6') {
+            format!("{}.SH", symbol)
+        } else {
+            format!("{}.SZ", symbol)
+        };
+        
+        // 获取因子数据
+        let quotes = state.cache.all_quotes.read().await;
+        let quote = quotes.iter().find(|q| q.symbol == symbol_with_suffix);
+        
+        if let Some(q) = quote {
+            let mut data = std::collections::HashMap::new();
+            data.insert("pe".to_string(), q.pe_ratio);
+            data.insert("pb".to_string(), if q.price > 0.0 { q.total_market_cap / q.price / 1e8 } else { 0.0 });
+            // 模拟其他因子
+            data.insert("roe".to_string(), 10.0 + (q.change_pct * 0.5).max(-5.0).min(5.0));
+            data.insert("roa".to_string(), 5.0);
+            data.insert("gross_margin".to_string(), 30.0);
+            data.insert("net_margin".to_string(), 10.0);
+            data.insert("revenue_growth".to_string(), q.change_pct * 0.8);
+            data.insert("profit_growth".to_string(), q.change_pct * 0.6);
+            data.insert("rsi_14".to_string(), 50.0);
+            data.insert("macd".to_string(), 0.0);
+            data.insert("volatility_20".to_string(), 2.0);
+            data.insert("kdj_k".to_string(), 50.0);
+            data.insert("kdj_d".to_string(), 50.0);
+            data.insert("boll_upper".to_string(), q.price * 1.02);
+            data.insert("atr".to_string(), q.price * 0.02);
+            data.insert("williams_r".to_string(), -50.0);
+            data.insert("cci".to_string(), 0.0);
+            
+            // 模拟目标变量
+            let target_value = if target == "updown" {
+                if q.change_pct > 0.0 { 1.0 } else { 0.0 }
+            } else {
+                q.change_pct
+            };
+            data.insert("__target__".to_string(), target_value);
+            
+            all_data.push(data);
+        }
+    }
+    
+    if all_data.is_empty() {
+        return err_response_msg("没有获取到足够的数据");
+    }
+    
+    // 计算各因子与目标的相关性/重要性
+    let mut factor_scores: Vec<FactorImportance> = Vec::new();
+    
+    for factor in &factor_pool {
+        let mut values: Vec<f64> = Vec::new();
+        let mut targets: Vec<f64> = Vec::new();
+        
+        for data in &all_data {
+            if let (Some(&v), Some(&t)) = (data.get(factor), data.get("__target__")) {
+                if v.is_finite() && t.is_finite() {
+                    values.push(v);
+                    targets.push(t);
+                }
+            }
+        }
+        
+        if values.len() >= 5 {
+            let correlation = calculate_correlation(&values, &targets);
+            let importance = correlation.abs();
+            
+            factor_scores.push(FactorImportance {
+                factor: factor.clone(),
+                importance,
+                correlation,
+                selected: false,
+            });
+        }
+    }
+    
+    // 根据方法选择因子
+    factor_scores.sort_by(|a, b| b.importance.partial_cmp(&a.importance).unwrap_or(std::cmp::Ordering::Equal));
+    
+    let selected_count = (factor_scores.len() as f64 * 0.4).max(3.0) as usize;
+    let mut selected_factors: Vec<FactorImportance> = Vec::new();
+    
+    match method.as_str() {
+        "correlation" => {
+            // 选择相关性最高的因子
+            for (i, f) in factor_scores.iter().enumerate() {
+                let mut f = f.clone();
+                f.selected = i < selected_count;
+                if f.selected {
+                    selected_factors.push(f.clone());
+                }
+            }
+        },
+        "greedy" => {
+            // 贪心选择：逐步添加因子，选择提升最大的
+            let mut current_factors: Vec<String> = Vec::new();
+            let mut best_score = 0.0;
+            
+            for _ in 0..selected_count {
+                let mut best_factor = String::new();
+                for f in &factor_scores {
+                    if !current_factors.contains(&f.factor) {
+                        let test_factors = {
+                            let mut tf = current_factors.clone();
+                            tf.push(f.factor.clone());
+                            tf
+                        };
+                        let score = evaluate_factor_combination(&all_data, &test_factors, &target);
+                        if score > best_score {
+                            best_score = score;
+                            best_factor = f.factor.clone();
+                        }
+                    }
+                }
+                if !best_factor.is_empty() {
+                    current_factors.push(best_factor.clone());
+                    if let Some(fi) = factor_scores.iter().find(|f| f.factor == best_factor) {
+                        let mut f = fi.clone();
+                        f.selected = true;
+                        selected_factors.push(f);
+                    }
+                }
+            }
+        },
+        _ => {
+            // 默认: importance - 选择重要性最高的
+            for (i, f) in factor_scores.iter().enumerate() {
+                let mut f = f.clone();
+                f.selected = i < selected_count;
+                if f.selected {
+                    selected_factors.push(f.clone());
+                }
+            }
+        }
+    }
+    
+    let result = AutoMLResult {
+        selected_factors: selected_factors.clone(),
+        all_factors: factor_scores,
+        method: method.clone(),
+        sample_size: all_data.len(),
+    };
+    
+    ok_response(result)
+}
+
+fn calculate_correlation(x: &[f64], y: &[f64]) -> f64 {
+    if x.len() != y.len() || x.len() < 2 { return 0.0; }
+    let n = x.len() as f64;
+    let sum_x: f64 = x.iter().sum();
+    let sum_y: f64 = y.iter().sum();
+    let sum_xy: f64 = x.iter().zip(y.iter()).map(|(a, b)| a * b).sum();
+    let sum_x2: f64 = x.iter().map(|a| a * a).sum();
+    let sum_y2: f64 = y.iter().map(|b| b * b).sum();
+    
+    let numerator = n * sum_xy - sum_x * sum_y;
+    let denominator = ((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y)).sqrt();
+    
+    if denominator == 0.0 { 0.0 } else { numerator / denominator }
+}
+
+fn evaluate_factor_combination(
+    data: &[std::collections::HashMap<String, f64>],
+    factors: &[String],
+    target: &str,
+) -> f64 {
+    // 简化评估：计算因子组合与目标的相关性均值
+    let mut correlations: Vec<f64> = Vec::new();
+    
+    for factor in factors {
+        let mut values: Vec<f64> = Vec::new();
+        let mut targets: Vec<f64> = Vec::new();
+        
+        for d in data {
+            if let (Some(&v), Some(&t)) = (d.get(factor), d.get("__target__")) {
+                if v.is_finite() && t.is_finite() {
+                    values.push(v);
+                    targets.push(t);
+                }
+            }
+        }
+        
+        if values.len() >= 5 {
+            correlations.push(calculate_correlation(&values, &targets).abs());
+        }
+    }
+    
+    if correlations.is_empty() { 0.0 } else { correlations.iter().sum::<f64>() / correlations.len() as f64 }
 }
 
 // ============ 策略版本管理 API ============

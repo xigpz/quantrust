@@ -11,6 +11,7 @@ use std::sync::Arc;
 use axum::{Router, Json, routing::get};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+use tower_http::compression::CompressionLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::routes::{AppState, create_router};
@@ -78,13 +79,13 @@ async fn main() -> anyhow::Result<()> {
         .merge(create_router(state.clone()))
         .merge(create_auth_router(state.clone()))
         .merge(create_sim_router(state.clone()))
-        .merge(create_sim_router(state.clone()))
         .route("/ws", axum::routing::get(ws::ws_handler).with_state(state))
         .layer(cors)
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(CompressionLayer::new());
 
     // Start server
-    let addr = "0.0.0.0:8080";
+    let addr = "0.0.0.0:8082";
     tracing::info!("Server listening on http://{}", addr);
     tracing::info!("WebSocket available at ws://{}/ws", addr);
 

@@ -1,4 +1,5 @@
 pub mod anomaly;
+pub mod news_analyzer;
 pub mod hot_stocks;
 pub mod backtest;
 pub mod scanner;
@@ -10,6 +11,7 @@ pub mod notification;
 pub mod trading;
 
 pub use anomaly::AnomalyDetector;
+pub use news_analyzer::{NewsAnalyzer, Sentiment, AnomalyPrediction};
 pub use hot_stocks::HotStockRanker;
 pub use backtest::BacktestEngine;
 pub use scanner::MarketScanner;

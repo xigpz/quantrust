@@ -30,6 +30,10 @@ impl DataProvider {
         self.api.get_sectors().await
     }
 
+    pub async fn get_sector_stocks(&self, bk_code: &str) -> Result<Vec<StockQuote>> {
+        self.api.get_sector_stocks(bk_code).await
+    }
+
     pub async fn get_limit_up_stocks(&self) -> Result<Vec<StockQuote>> {
         self.api.get_limit_up_stocks().await
     }

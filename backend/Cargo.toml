@@ -9,7 +9,7 @@ description = "QuantRust - A-Share Quantitative Trading Platform Backend"
 axum = { version = "0.8", features = ["ws", "macros"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
 tower = { version = "0.5", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs", "compression-br", "compression-gzip"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -25,12 +25,15 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # HTTP client for data fetching
 reqwest = { version = "0.12", features = ["json"] }
 
+# Utils
+once_cell = "1.19"
+chrono = { version = "0.4", features = ["serde"] }
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Time handling
-chrono = { version = "0.4", features = ["serde"] }
 
 # UUID
 uuid = { version = "1", features = ["v4", "serde"] }

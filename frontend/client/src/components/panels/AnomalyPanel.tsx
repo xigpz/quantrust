@@ -1,148 +1,125 @@
-/**
- * AnomalyPanel - 异动股票检测面板
- * Design: 暗夜终端 - 告警式布局，异动类型标签
- */
-import { useAnomalies, formatPrice, formatPercent, getChangeColor } from '@/hooks/useMarketData';
-import { Zap, RefreshCw, AlertTriangle, TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
-import { useStockClick } from '@/pages/Dashboard';
+import { useState, useEffect, useContext } from 'react';
+import { StockClickContext } from '@/pages/Dashboard';
+import { TrendingUp, TrendingDown, AlertTriangle, Activity } from 'lucide-react';
 
-function getAnomalyIcon(type: string) {
-  switch (type) {
-    case 'LimitUp': return <ArrowUpCircle className="w-3.5 h-3.5 text-up" />;
-    case 'LimitDown': return <ArrowDownCircle className="w-3.5 h-3.5 text-down" />;
-    case 'PriceSurge': return <TrendingUp className="w-3.5 h-3.5 text-up" />;
-    case 'PriceDrop': return <TrendingDown className="w-3.5 h-3.5 text-down" />;
-    case 'VolumeSpike': return <AlertTriangle className="w-3.5 h-3.5 text-warning" />;
-    default: return <Zap className="w-3.5 h-3.5 text-info" />;
-  }
-}
+const API_BASE = '';
 
-function getAnomalyLabel(type: string): string {
-  const labels: Record<string, string> = {
-    VolumeSpike: '量能突增',
-    PriceSurge: '急速拉升',
-    PriceDrop: '急速下跌',
-    LimitUp: '涨停',
-    LimitDown: '跌停',
-    LimitUpOpen: '涨停打开',
-    LimitDownOpen: '跌停打开',
-    LargeOrder: '大单异动',
-    TurnoverSpike: '换手突增',
-    GapUp: '跳空高开',
-    GapDown: '跳空低开',
-    BreakResistance: '突破压力',
-    BreakSupport: '跌破支撑',
-    BoardRush: '板块异动',
+interface AnomalyPrediction {
+  symbol: string;
+  name: string;
+  pred_type: string;
+  sentiment: {
+    score: number;
+    label: string;
+    keywords: string[];
   };
-  return labels[type] || type;
-}
-
-function getAnomalyBadgeColor(type: string): string {
-  if (['LimitUp', 'PriceSurge', 'GapUp', 'BreakResistance'].includes(type)) {
-    return 'bg-up/15 text-red-300';
-  }
-  if (['LimitDown', 'PriceDrop', 'GapDown', 'BreakSupport'].includes(type)) {
-    return 'bg-down/15 text-green-300';
-  }
-  return 'bg-yellow-500/15 text-yellow-300';
+  urgency: string;
+  timestamp: string;
+  reason: string;
 }
 
 export default function AnomalyPanel() {
-  const { data: anomalies, loading, refetch } = useAnomalies();
-  const { openStock } = useStockClick();
+  const { openStock } = useContext(StockClickContext);
+  const [predictions, setPredictions] = useState<AnomalyPrediction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'high'>('all');
 
-  const formatAnomalyTime = (ts?: string): string => {
-    if (!ts) return '';
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
+  const fetchPredictions = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/anomaly/predictions`).then(r => r.json());
+      if (res.success) {
+        setPredictions(res.data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchPredictions();
+    const interval = setInterval(fetchPredictions, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const filtered = filter === 'high' ? predictions.filter(p => p.urgency === '高') : predictions;
+
+  const getUrgencyColor = (u: string) => {
+    if (u === '高') return 'bg-red-500/20 text-red-400 border-red-500/30';
+    if (u === '中') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+  };
+
+  const getTypeIcon = (type_: string) => {
+    if (type_.includes('涨停')) return <TrendingUp className="w-4 h-4 text-red-400" />;
+    if (type_.includes('风险')) return <AlertTriangle className="w-4 h-4 text-red-400" />;
+    return <Activity className="w-4 h-4 text-yellow-400" />;
   };
 
   return (
-    <div className="flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border sticky top-0 bg-card z-10">
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-yellow-400" />
-          <h2 className="text-sm font-semibold">异动检测</h2>
-          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            {anomalies?.length || 0} 条
-          </span>
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">异动预测</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-3 py-1 text-xs rounded ${filter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}
+          >
+            全部
+          </button>
+          <button
+            onClick={() => setFilter('high')}
+            className={`px-3 py-1 text-xs rounded ${filter === 'high' ? 'bg-red-600 text-white' : 'bg-muted'}`}
+          >
+            仅高紧急
+          </button>
         </div>
-        <button onClick={refetch} className="text-muted-foreground hover:text-foreground transition-colors">
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-        </button>
       </div>
 
-      {/* Anomaly List */}
-      <div className="divide-y divide-border/50">
-        {anomalies?.map((item, i) => (
-          <div
-            key={`${item.symbol}-${item.anomaly_type}-${i}`}
-            onClick={() => openStock(item.symbol, item.name)}
-            className="px-4 py-2.5 hover:bg-accent/50 transition-colors cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                {getAnomalyIcon(item.anomaly_type)}
-                <span className="font-medium text-sm">{item.name}</span>
-                <span className="text-[10px] text-muted-foreground font-mono-data">{item.symbol}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`font-mono-data text-sm font-medium ${getChangeColor(item.change_pct)}`}>
-                  {formatPercent(item.change_pct)}
-                </span>
-                <span className={`font-mono-data text-xs ${getChangeColor(item.change_pct)}`}>
-                  {formatPrice(item.price)}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${getAnomalyBadgeColor(item.anomaly_type)}`}>
-                  {getAnomalyLabel(item.anomaly_type)}
-                </span>
-                <span className="text-[10px] text-muted-foreground">{item.description}</span>
-                {item.timestamp && (
-                  <span className="text-[10px] text-muted-foreground font-mono-data">
-                    {formatAnomalyTime(item.timestamp)}
+      {loading ? (
+        <div className="text-center py-8 text-muted-foreground">加载中...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">暂无异动预测</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((pred, i) => (
+            <div
+              key={`${pred.symbol}-${i}`}
+              onClick={() => openStock(pred.symbol, pred.name)}
+              className="bg-card rounded-lg p-4 border hover:border-primary/50 cursor-pointer transition-colors"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  {getTypeIcon(pred.pred_type)}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">{pred.symbol}</span>
+                      <span className="text-sm text-muted-foreground">{pred.name}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">{pred.reason}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className={`px-2 py-1 text-xs rounded border ${getUrgencyColor(pred.urgency)}`}>
+                    {pred.urgency}
                   </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-10 h-1 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${Math.min(item.anomaly_score, 100)}%`,
-                      background: item.anomaly_score > 80
-                        ? '#ef4444'
-                        : item.anomaly_score > 50
-                        ? '#f97316'
-                        : '#3b82f6',
-                    }}
-                  />
+                  <div className="text-xs text-muted-foreground mt-1">{pred.pred_type}</div>
                 </div>
               </div>
+              {pred.sentiment.keywords.length > 0 && (
+                <div className="flex gap-1 mt-2 flex-wrap">
+                  {pred.sentiment.keywords.map((kw, j) => (
+                    <span key={j} className="px-2 py-0.5 bg-muted text-xs rounded">
+                      {kw}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
-        {(!anomalies || anomalies.length === 0) && !loading && (
-          <div className="text-center py-12 text-muted-foreground text-sm">
-            <Zap className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            暂无异动（非交易时段）
-          </div>
-        )}
-        {loading && (
-          <div className="text-center py-8 text-muted-foreground">
-            <RefreshCw className="w-4 h-4 animate-spin mx-auto" />
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -120,6 +120,25 @@ pub fn init_db() -> Result<DbPool> {
         );
     ")?;
 
+    // Sim trading leaderboard table
+    conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS sim_leaderboard (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            initial_capital REAL NOT NULL DEFAULT 1000000.0,
+            current_capital REAL NOT NULL,
+            total_return REAL NOT NULL DEFAULT 0.0,
+            return_rate REAL NOT NULL DEFAULT 0.0,
+            total_trades INTEGER NOT NULL DEFAULT 0,
+            win_count INTEGER NOT NULL DEFAULT 0,
+            loss_count INTEGER NOT NULL DEFAULT 0,
+            win_rate REAL NOT NULL DEFAULT 0.0,
+            positions_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(username)
+        );
+    ")?;
+
     tracing::info!("Database initialized successfully");
     Ok(Arc::new(Mutex::new(conn)))
 }

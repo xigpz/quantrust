@@ -17,26 +17,28 @@ function IndexCard({ name, price, change, change_pct, volume, turnover, onClick 
   const isDown = change_pct < 0;
   return (
     <div
-      className={`rounded-lg p-3.5 panel-glow border border-border/50 ${
-      isUp ? 'bg-gradient-to-br from-red-950/60 to-red-900/30 border-red-800/30'
-      : isDown ? 'bg-gradient-to-br from-green-950/60 to-green-900/30 border-green-800/30'
-      : 'bg-card'
+      className={`rounded-lg p-3.5 panel-glow border ${
+      isUp 
+        ? 'dark:from-red-950/60 dark:to-red-900/30 dark:border-red-800/30 bg-red-50 border-red-200'
+        : isDown 
+        ? 'dark:from-green-950/60 dark:to-green-900/30 dark:border-green-800/30 bg-green-50 border-green-200'
+        : 'bg-card border-border/50'
     } ${onClick ? 'cursor-pointer hover:border-primary/60 hover:shadow-lg transition-colors' : ''}`}
       onClick={onClick}
     >
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs text-gray-400 font-medium">{name}</span>
-        {isUp ? <TrendingUp className="w-3.5 h-3.5 text-red-400" /> : isDown ? <TrendingDown className="w-3.5 h-3.5 text-green-400" /> : null}
+        <span className="text-xs dark:text-gray-400 text-gray-600 font-medium">{name}</span>
+        {isUp ? <TrendingUp className="w-3.5 h-3.5 dark:text-red-400 text-red-600" /> : isDown ? <TrendingDown className="w-3.5 h-3.5 dark:text-green-400 text-green-600" /> : null}
       </div>
-      <div className={`font-mono-data text-xl font-bold ${isUp ? 'text-red-400' : isDown ? 'text-green-400' : 'text-gray-200'}`}>
+      <div className={`font-mono-data text-xl font-bold ${isUp ? 'dark:text-red-400 text-red-600' : isDown ? 'dark:text-green-400 text-green-600' : 'dark:text-gray-200 text-gray-800'}`}>
         {formatPrice(price)}
       </div>
       <div className="flex items-center gap-2 mt-1.5">
-        <span className={`font-mono-data text-xs ${isUp ? 'text-red-400/80' : isDown ? 'text-green-400/80' : 'text-gray-400'}`}>
+        <span className={`font-mono-data text-xs ${isUp ? 'dark:text-red-400/80 text-red-500' : isDown ? 'dark:text-green-400/80 text-green-500' : 'dark:text-gray-400 text-gray-600'}`}>
           {change > 0 ? '+' : ''}{change.toFixed(2)}
         </span>
         <span className={`font-mono-data text-xs font-semibold px-1.5 py-0.5 rounded ${
-          isUp ? 'bg-red-500/20 text-red-300' : isDown ? 'bg-green-500/20 text-green-300' : 'text-gray-400'
+          isUp ? 'dark:bg-red-500/20 dark:text-red-300 bg-red-100 text-red-700' : isDown ? 'dark:bg-green-500/20 dark:text-green-300 bg-green-100 text-green-700' : 'text-gray-400'
         }`}>
           {formatPercent(change_pct)}
         </span>

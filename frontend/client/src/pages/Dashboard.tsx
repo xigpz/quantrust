@@ -17,13 +17,23 @@ import SectorsPanel from '@/components/panels/SectorsPanel';
 import MoneyFlowPanel from '@/components/panels/MoneyFlowPanel';
 import LimitUpPanel from '@/components/panels/LimitUpPanel';
 import WatchlistPanel from '@/components/panels/WatchlistPanel';
+import WatchlistAnalysisPanel from '@/components/panels/WatchlistAnalysisPanel';
 import BacktestPanel from '@/components/panels/BacktestPanel';
 import OptimizationPanel from '@/components/panels/OptimizationPanel';
 import StrategyVersionsPanel from '@/components/panels/StrategyVersionsPanel';
+import LeaderboardPanel from '@/components/panels/LeaderboardPanel';
+import VisualStrategyEditor from '@/components/panels/VisualStrategyEditor';
+import StrategyMarketPanel from '@/components/panels/StrategyMarketPanel';
+import RecommendPanel from '@/components/panels/RecommendPanel';
+import VirtualTradingPanel from '@/components/panels/VirtualTradingPanel';
+import StrategyPanel from '@/components/panels/StrategyPanel';
+import NewsPanel from '@/components/panels/NewsPanel';
+import WatchlistAnalysisPanel from '@/components/panels/WatchlistAnalysisPanel';
 import SimTrading from './SimTrading';
 import PortfolioPanel from '@/components/panels/PortfolioPanel';
 import SettingsPanel from '@/components/panels/SettingsPanel';
 import StockDetailModal from '@/components/StockDetailModal';
+import MobileNav from '@/components/MobileNav';
 import { useWebSocket } from '@/hooks/useMarketData';
 
 // Context: 让子面板可以触发股票详情弹窗
@@ -37,9 +47,14 @@ const panelMap: Record<TabId, React.ComponentType> = {
   overview: OverviewPanel,
   hot: HotStocksPanel,
   anomaly: AnomalyPanel,
+  news: NewsPanel,
+  watchlist2: WatchlistAnalysisPanel,
   momentum: MomentumPanel,
   risk: RiskPanel,
   dragon: DragonTigerPanel,
+  recommend: RecommendPanel,
+  virtual: VirtualTradingPanel,
+  strategy: StrategyPanel,
   factor: FactorPanel,
   screener: ScreenerPanel,
   sectors: SectorsPanel,
@@ -52,6 +67,9 @@ const panelMap: Record<TabId, React.ComponentType> = {
   sim: SimTrading,
   portfolio: PortfolioPanel,
   settings: SettingsPanel,
+  leaderboard: LeaderboardPanel,
+  visual: VisualStrategyEditor,
+  market: StrategyMarketPanel,
 };
 
 export default function Dashboard() {
@@ -66,22 +84,33 @@ export default function Dashboard() {
   return (
     <StockClickContext.Provider value={{ openStock: (symbol, name) => setSelectedStock({ symbol, name }) }}>
       <div className="h-screen flex flex-col bg-background overflow-hidden">
-        {/* Top Market Bar */}
-        <MarketBar wsConnected={connected} isDemo={isDemo} />
+        {/* Top Market Bar - 移动端隐藏 */}
+        <MarketBar wsConnected={connected} isDemo={isDemo} className="hidden md:flex" />
 
         {/* Main Content */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar */}
-          <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+          {/* Sidebar - 移动端可折叠 */}
+          <Sidebar 
+            activeTab={activeTab} 
+            onTabChange={setActiveTab} 
+            className="hidden md:flex w-44 shrink-0"
+          />
+          
+          {/* 移动端底部导航 */}
+          <MobileNav 
+            activeTab={activeTab} 
+            onTabChange={setActiveTab} 
+            className="md:hidden fixed bottom-0 left-0 right-0 z-50"
+          />
 
-          {/* Panel Area - overflow-y-auto 让面板内容可以滚动 */}
-          <main className="flex-1 overflow-y-auto bg-card/30">
+          {/* Panel Area */}
+          <main className="flex-1 overflow-y-auto bg-card/30 pb-16 md:pb-0">
             <ActivePanel />
           </main>
         </div>
 
-        {/* Bottom Status Bar */}
-        <footer className="h-6 bg-card border-t border-border flex items-center px-4 text-[10px] text-muted-foreground gap-4 shrink-0">
+        {/* Bottom Status Bar - 移动端隐藏 */}
+        <footer className="hidden md:flex h-6 bg-card border-t border-border items-center px-4 text-[10px] text-muted-foreground gap-4 shrink-0">
           <span className="flex items-center gap-1">
             <div className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-500 pulse-dot' : 'bg-yellow-500'}`} />
             {connected ? '数据连接正常' : isDemo ? 'Demo 模式 — 启动后端后自动切换实时数据' : '等待连接...'}
