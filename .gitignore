@@ -12,6 +12,7 @@ frontend/.env.local
 .idea/
 *.swp
 *.swo
+.worktrees/
 
 # OS
 .DS_Store
