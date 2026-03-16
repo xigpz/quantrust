@@ -1,216 +1,271 @@
-/**
- * ScreenerPanel - 选股器面板
- */
-import { useState } from 'react';
-import { Filter, RefreshCw, Search, TrendingUp, TrendingDown } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { toast } from 'sonner';
-import { useStockClick } from '@/pages/Dashboard';
+import { useEffect, useMemo, useState } from "react";
+import { Download, RefreshCw, Save, Search } from "lucide-react";
+import { toast } from "sonner";
+import { addToWatchlist } from "@/hooks/useMarketData";
+import {
+  createScreenerTemplate,
+  fetchScreenerCatalog,
+  importEastmoneyScreener,
+  listScreenerTemplates,
+  runScreenerDefinition,
+  updateScreenerTemplate,
+  type ScreenerCatalogField,
+  type ScreenerDefinition,
+  type ScreenerExecutionResult,
+  type ScreenerTemplateRecord,
+} from "@/lib/screener";
+import { useStockClick } from "@/pages/Dashboard";
+import ConditionBuilder from "./screener/ConditionBuilder";
+import ScreenerResultsTable from "./screener/ScreenerResultsTable";
+import ScreenerTemplateDrawer from "./screener/ScreenerTemplateDrawer";
 
-interface ScreenerReq {
-  min_pe?: number;
-  max_pe?: number;
-  min_pb?: number;
-  max_pb?: number;
-  min_roe?: number;
-  min_growth?: number;
-  min_volume?: number;
-  change_pct_min?: number;
-  limit?: number;
+function createEmptyDefinition(): ScreenerDefinition {
+  return {
+    name: "Visual Screener",
+    description: "",
+    logic: {
+      id: "root",
+      operator: "AND",
+      children: [],
+    },
+    sorts: [{ field: "change_pct", direction: "desc" }],
+    columns: ["symbol", "name", "latest_price", "change_pct"],
+    source: "manual",
+  };
 }
 
-interface StockQuote {
-  symbol: string;
-  name: string;
-  price: number;
-  change: number;
-  change_pct: number;
-  volume: number;
-  turnover: number;
-  pe_ratio: number;
-}
-
-function formatNumber(num: number): string {
-  if (num >= 1e8) return (num / 1e8).toFixed(2) + '亿';
-  if (num >= 1e4) return (num / 1e4).toFixed(2) + '万';
-  return num.toFixed(0);
+function parseValidationErrors(message: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(message) as Array<{ condition_id?: string; message?: string }>;
+    return parsed.reduce<Record<string, string>>((accumulator, error) => {
+      if (error.condition_id && error.message) {
+        accumulator[error.condition_id] = error.message;
+      }
+      return accumulator;
+    }, {});
+  } catch {
+    return {};
+  }
 }
 
 export default function ScreenerPanel() {
-  const [filters, setFilters] = useState<ScreenerReq>({
-    min_pe: undefined,
-    max_pe: undefined,
-    change_pct_min: undefined,
-    min_volume: undefined,
-    limit: 50,
-  });
-  
-  const [results, setResults] = useState<StockQuote[]>([]);
+  const [catalog, setCatalog] = useState<ScreenerCatalogField[]>([]);
+  const [definition, setDefinition] = useState<ScreenerDefinition>(createEmptyDefinition);
+  const [results, setResults] = useState<ScreenerExecutionResult["rows"]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [templates, setTemplates] = useState<ScreenerTemplateRecord[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [templateName, setTemplateName] = useState("Momentum Setup");
+  const [templateDescription, setTemplateDescription] = useState("");
+  const [importUrl, setImportUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const { openStock } = useStockClick();
 
-  const updateFilter = (key: keyof ScreenerReq, value: number | undefined) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+  const importWarningCount = definition.importMeta?.unsupportedConditions.length ?? 0;
+
+  const reloadTemplates = async () => {
+    try {
+      setTemplates(await listScreenerTemplates());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load templates");
+    }
   };
 
-  const runScreener = async () => {
-    setLoading(true);
-    setHasSearched(true);
-    try {
-      const res = await fetch('/api/screener', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(filters),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setResults(data.data);
-        toast.success(`找到 ${data.data.length} 只股票`);
-      } else {
-        toast.error(data.message);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [nextCatalog, nextTemplates] = await Promise.all([fetchScreenerCatalog(), listScreenerTemplates()]);
+        if (!mounted) {
+          return;
+        }
+        setCatalog(nextCatalog);
+        setTemplates(nextTemplates);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to initialize screener workbench");
       }
-    } catch (e) {
-      toast.error('选股失败');
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleRun = async () => {
+    setLoading(true);
+    setValidationErrors({});
+    try {
+      const result = await runScreenerDefinition(definition, 80);
+      setResults(result.rows);
+      setTotalCount(result.total_count);
+      toast.success(`Matched ${result.total_count} symbols`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to run screener";
+      const fieldErrors = parseValidationErrors(message);
+      setValidationErrors(fieldErrors);
+      toast.error(Object.keys(fieldErrors).length > 0 ? "Fix invalid conditions before running again" : message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  const handleImport = async () => {
+    if (!importUrl.trim()) {
+      toast.error("Paste an EastMoney screener URL first");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const imported = await importEastmoneyScreener(importUrl.trim());
+      setDefinition(imported);
+      setTemplateName(imported.name || "Imported EastMoney Screener");
+      setTemplateDescription(imported.description || "Imported from EastMoney");
+      setSelectedTemplateId(null);
+      setValidationErrors({});
+      toast.success(`Imported ${imported.importMeta?.importedConditions ?? 0} conditions`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Import failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    setSaving(true);
+    try {
+      if (selectedTemplateId) {
+        await updateScreenerTemplate(selectedTemplateId, {
+          name: templateName,
+          description: templateDescription,
+          definition,
+          sourceType: definition.source || "manual",
+        });
+      } else {
+        const created = await createScreenerTemplate({
+          name: templateName,
+          description: templateDescription,
+          definition,
+          sourceType: definition.source || "manual",
+        });
+        setSelectedTemplateId(created.id);
+      }
+
+      await reloadTemplates();
+      toast.success("Template saved");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save template");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resultColumns = useMemo(() => {
+    return definition.columns.length > 0 ? definition.columns : Object.keys(results[0] ?? {});
+  }, [definition.columns, results]);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-border">
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-purple-400" />
-          <h2 className="text-sm font-medium">选股器</h2>
-        </div>
-        <button onClick={runScreener} disabled={loading} className="text-muted-foreground hover:text-foreground transition-colors">
-          <Search className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-        </button>
-      </div>
-
-      {/* 筛选条件 */}
-      <div className="px-4 py-3 border-b border-border space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          {/* 市盈率 */}
+    <div className="flex h-full flex-col gap-4 p-4">
+      <div className="rounded-[28px] border border-border bg-card/80 px-5 py-4 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <label className="text-xs text-muted-foreground">市盈率 (PE)</label>
-            <div className="flex gap-1 mt-1">
-              <input
-                type="number"
-                placeholder="最小"
-                value={filters.min_pe ?? ''}
-                onChange={(e) => updateFilter('min_pe', e.target.value ? parseFloat(e.target.value) : undefined)}
-                className="w-full bg-background border border-border rounded px-2 py-1 text-xs"
-              />
-              <input
-                type="number"
-                placeholder="最大"
-                value={filters.max_pe ?? ''}
-                onChange={(e) => updateFilter('max_pe', e.target.value ? parseFloat(e.target.value) : undefined)}
-                className="w-full bg-background border border-border rounded px-2 py-1 text-xs"
-              />
+            <div className="text-lg font-semibold text-foreground">EastMoney Screener Workbench</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              Compose nested rules, import compatible EastMoney links, and save reusable templates.
             </div>
           </div>
 
-          {/* 涨跌幅 */}
-          <div>
-            <label className="text-xs text-muted-foreground">涨跌幅 ≥</label>
-            <div className="flex items-center mt-1">
-              <input
-                type="number"
-                step="0.1"
-                value={filters.change_pct_min ?? ''}
-                onChange={(e) => updateFilter('change_pct_min', e.target.value ? parseFloat(e.target.value) : undefined)}
-                className="w-full bg-background border border-border rounded px-2 py-1 text-xs"
-              />
-              <span className="ml-1 text-xs">%</span>
-            </div>
-          </div>
-
-          {/* 成交量 */}
-          <div>
-            <label className="text-xs text-muted-foreground">成交量 ≥</label>
-            <div className="flex items-center mt-1">
-              <input
-                type="number"
-                value={(filters.min_volume ?? 0) / 10000}
-                onChange={(e) => updateFilter('min_volume', e.target.value ? parseFloat(e.target.value) * 10000 : undefined)}
-                className="w-full bg-background border border-border rounded px-2 py-1 text-xs"
-              />
-              <span className="ml-1 text-xs">万</span>
-            </div>
-          </div>
-
-          {/* 返回数量 */}
-          <div>
-            <label className="text-xs text-muted-foreground">返回数量</label>
-            <select
-              value={filters.limit ?? 50}
-              onChange={(e) => updateFilter('limit', parseInt(e.target.value))}
-              className="w-full mt-1 bg-background border border-border rounded px-2 py-1 text-xs"
-            >
-              <option value={10}>10只</option>
-              <option value={30}>30只</option>
-              <option value={50}>50只</option>
-              <option value={100}>100只</option>
-            </select>
+          <div className="flex flex-col gap-3 xl:w-[620px]">
+            <label className="grid gap-2 text-xs text-muted-foreground">
+              Import EastMoney URL
+              <div className="flex gap-2">
+                <input
+                  value={importUrl}
+                  onChange={(event) => setImportUrl(event.target.value)}
+                  placeholder="https://xuangu.eastmoney.com/result?..."
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+                />
+                <button
+                  type="button"
+                  onClick={handleImport}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground"
+                >
+                  <Download className="h-4 w-4" />
+                  Import
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRun}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-950 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+                >
+                  {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  Run
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveTemplate}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground"
+                >
+                  <Save className="h-4 w-4" />
+                  Save
+                </button>
+              </div>
+            </label>
           </div>
         </div>
-
-        <button
-          onClick={runScreener}
-          disabled={loading}
-          className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded flex items-center justify-center gap-2 disabled:opacity-50"
-        >
-          <Filter className="w-4 h-4" />
-          {loading ? '选股中...' : '开始选股'}
-        </button>
       </div>
 
-      <ScrollArea className="flex-1">
-        {!hasSearched ? (
-          <div className="p-4 text-center text-muted-foreground text-sm">
-            设置筛选条件后点击"开始选股"
-          </div>
-        ) : results.length === 0 ? (
-          <div className="p-4 text-center text-muted-foreground text-sm">
-            没有符合条件的股票
-          </div>
-        ) : (
-          <div className="p-2">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-card z-10">
-                <tr className="text-muted-foreground border-b border-border">
-                  <th className="text-left py-2 px-2 font-medium">股票</th>
-                  <th className="text-right py-2 px-2 font-medium">现价</th>
-                  <th className="text-right py-2 px-2 font-medium">涨跌幅</th>
-                  <th className="text-right py-2 px-2 font-medium">成交量</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((stock, idx) => (
-                  <tr key={idx} onClick={() => openStock(stock.symbol, stock.name)} className="border-b border-border/50 hover:bg-accent/50 transition-colors cursor-pointer">
-                    <td className="py-2 px-2">
-                      <div className="font-medium">{stock.name}</div>
-                      <div className="text-muted-foreground text-xs">{stock.symbol}</div>
-                    </td>
-                    <td className="text-right py-2 px-2 font-mono">
-                      {stock.price > 0 ? stock.price.toFixed(2) : '—'}
-                    </td>
-                    <td className={`text-right py-2 px-2 font-mono flex items-center justify-end gap-1 ${stock.change_pct >= 0 ? 'text-up' : 'text-down'}`}>
-                      {stock.change_pct >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {stock.change_pct > 0 ? '+' : ''}{stock.change_pct.toFixed(2)}%
-                    </td>
-                    <td className="text-right py-2 px-2 font-mono text-muted-foreground">
-                      {formatNumber(stock.volume)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </ScrollArea>
+      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(360px,430px)_minmax(0,1fr)_300px]">
+        <div className="min-h-0 overflow-auto rounded-[28px] border border-border bg-card/40">
+          <ConditionBuilder
+            catalog={catalog}
+            definition={definition}
+            importWarningCount={importWarningCount}
+            validationErrors={validationErrors}
+            onChange={setDefinition}
+            onRun={handleRun}
+          />
+        </div>
+
+        <ScreenerResultsTable
+          rows={results}
+          columns={resultColumns}
+          totalCount={totalCount}
+          loading={loading}
+          onSelectStock={(symbol, name) => openStock(symbol, name)}
+          onAddToWatchlist={async (symbol, name) => {
+            const response = await addToWatchlist({ symbol, name: name || symbol });
+            if (response.success) {
+              toast.success(`${symbol} added to watchlist`);
+            } else {
+              toast.error(response.message);
+            }
+          }}
+        />
+
+        <ScreenerTemplateDrawer
+          templates={templates}
+          selectedTemplateId={selectedTemplateId}
+          draftName={templateName}
+          draftDescription={templateDescription}
+          saving={saving}
+          onDraftNameChange={setTemplateName}
+          onDraftDescriptionChange={setTemplateDescription}
+          onSelectTemplate={(template) => {
+            setSelectedTemplateId(template.id);
+            setTemplateName(template.name);
+            setTemplateDescription(template.description || "");
+            setDefinition(template.definition);
+            setValidationErrors({});
+          }}
+          onSave={handleSaveTemplate}
+        />
+      </div>
     </div>
   );
 }
