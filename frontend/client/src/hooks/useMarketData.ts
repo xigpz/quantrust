@@ -8,7 +8,7 @@ import {
 // - In local dev: Vite proxies /api -> http://localhost:8080 (no CORS issues)
 // - In production: set VITE_API_BASE to your backend URL
 // - When VITE_API_BASE is empty, use relative path (works with Vite proxy)
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+export const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 // Track if backend is available
 let backendAvailable: boolean | null = null;
@@ -24,7 +24,7 @@ async function checkBackend(): Promise<boolean> {
   return backendAvailable;
 }
 
-interface ApiResponse<T> {
+export interface ApiResponse<T> {
   success: boolean;
   data: T;
   message: string;
