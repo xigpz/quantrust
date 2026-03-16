@@ -1,20 +1,32 @@
-use anyhow::Result;
+﻿use anyhow::Result;
 use rusqlite::Connection;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub type DbPool = Arc<Mutex<Connection>>;
 
 pub fn init_db() -> Result<DbPool> {
-    let conn = Connection::open("quantrust.db")?;
-    
-    conn.execute_batch("
+    init_db_at("quantrust.db")
+}
+
+pub fn init_db_at<P: AsRef<Path>>(path: P) -> Result<DbPool> {
+    let conn = Connection::open(path)?;
+    configure_db(&conn)?;
+    tracing::info!("Database initialized successfully");
+    Ok(Arc::new(Mutex::new(conn)))
+}
+
+fn configure_db(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "
         PRAGMA journal_mode=WAL;
         PRAGMA synchronous=NORMAL;
         PRAGMA foreign_keys=ON;
-    ")?;
+    ",
+    )?;
 
-    // Users table (for JWT auth)
-    conn.execute_batch("
+    conn.execute_batch(
+        "
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
@@ -23,10 +35,7 @@ pub fn init_db() -> Result<DbPool> {
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-    ")?;
 
-    // Strategies table
-    conn.execute_batch("
         CREATE TABLE IF NOT EXISTS strategies (
             id TEXT PRIMARY KEY,
             user_id TEXT,
@@ -37,10 +46,7 @@ pub fn init_db() -> Result<DbPool> {
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-    ")?;
 
-    // Strategy versions table
-    conn.execute_batch("
         CREATE TABLE IF NOT EXISTS strategy_versions (
             id TEXT PRIMARY KEY,
             strategy_id TEXT NOT NULL,
@@ -49,10 +55,7 @@ pub fn init_db() -> Result<DbPool> {
             description TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-    ")?;
 
-    // Watchlist table
-    conn.execute_batch("
         CREATE TABLE IF NOT EXISTS watchlist (
             id TEXT PRIMARY KEY,
             user_id TEXT,
@@ -62,10 +65,7 @@ pub fn init_db() -> Result<DbPool> {
             added_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(user_id, symbol)
         );
-    ")?;
 
-    // Alert rules table
-    conn.execute_batch("
         CREATE TABLE IF NOT EXISTS alert_rules (
             id TEXT PRIMARY KEY,
             user_id TEXT,
@@ -76,10 +76,7 @@ pub fn init_db() -> Result<DbPool> {
             enabled INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-    ")?;
 
-    // Alert records table
-    conn.execute_batch("
         CREATE TABLE IF NOT EXISTS alert_records (
             id TEXT PRIMARY KEY,
             rule_id TEXT,
@@ -89,10 +86,7 @@ pub fn init_db() -> Result<DbPool> {
             triggered_at TEXT NOT NULL DEFAULT (datetime('now')),
             read INTEGER NOT NULL DEFAULT 0
         );
-    ")?;
 
-    // Candles cache table
-    conn.execute_batch("
         CREATE TABLE IF NOT EXISTS candles (
             symbol TEXT NOT NULL,
             period TEXT NOT NULL,
@@ -105,10 +99,7 @@ pub fn init_db() -> Result<DbPool> {
             turnover REAL NOT NULL DEFAULT 0,
             PRIMARY KEY (symbol, period, timestamp)
         );
-    ")?;
 
-    // Backtest results table
-    conn.execute_batch("
         CREATE TABLE IF NOT EXISTS backtest_results (
             id TEXT PRIMARY KEY,
             strategy_id TEXT NOT NULL,
@@ -118,10 +109,7 @@ pub fn init_db() -> Result<DbPool> {
             equity_curve TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-    ")?;
 
-    // Sim trading leaderboard table
-    conn.execute_batch("
         CREATE TABLE IF NOT EXISTS sim_leaderboard (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
@@ -137,8 +125,61 @@ pub fn init_db() -> Result<DbPool> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(username)
         );
-    ")?;
 
-    tracing::info!("Database initialized successfully");
-    Ok(Arc::new(Mutex::new(conn)))
+        CREATE TABLE IF NOT EXISTS screener_templates (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            name TEXT NOT NULL,
+            description TEXT,
+            definition_json TEXT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'manual',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS screener_runs (
+            id TEXT PRIMARY KEY,
+            template_id TEXT,
+            definition_json TEXT NOT NULL,
+            result_count INTEGER NOT NULL DEFAULT 0,
+            warning_json TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    ",
+    )?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Row;
+    use std::path::PathBuf;
+
+    fn temp_db_path(name: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("quantrust-{}-{}.db", name, uuid::Uuid::new_v4()));
+        path
+    }
+
+    #[test]
+    fn screener_templates_table_exists_after_init() {
+        let db_path = temp_db_path("screener-templates");
+        let pool = init_db_at(&db_path).expect("db init should succeed");
+        let conn = pool.lock().unwrap();
+
+        let exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = 'screener_templates'",
+                [],
+                |row: &Row<'_>| row.get(0),
+            )
+            .unwrap();
+
+        drop(conn);
+        std::fs::remove_file(db_path).ok();
+
+        assert_eq!(exists, 1);
+    }
 }

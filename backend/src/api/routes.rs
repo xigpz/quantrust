@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,7 @@ use crate::services::momentum::MomentumStrategy;
 use crate::services::risk::{RiskManager, RiskConfig, RiskReport};
 use crate::services::financial::{DragonTigerService, DragonTigerData, FinancialService, FinancialFilter, FinancialData};
 use crate::services::news_analyzer::{NewsAnalyzer, AnomalyPrediction, Sentiment};
+use crate::services::screener::{ScreenerExecutionResult, ScreenerService};
 use crate::models::*;
 use crate::db::DbPool;
 use crate::sim::SimState;
@@ -65,6 +66,13 @@ pub fn create_router(state: AppState) -> Router {
         // 龙虎榜
         .route("/api/dragon-tiger", get(get_dragon_tiger))
         // 选股器
+        .route("/api/screener/catalog", get(get_screener_catalog))
+        .route("/api/screener/run", post(run_screener_definition))
+        .route("/api/screener/import-eastmoney", post(import_eastmoney_screener))
+        .route("/api/screener/templates", get(list_screener_templates))
+        .route("/api/screener/templates", post(create_screener_template))
+        .route("/api/screener/templates/{id}", put(update_screener_template))
+        .route("/api/screener/templates/{id}", delete(delete_screener_template))
         .route("/api/screener", post(screener_stocks))
         // 因子库
         .route("/api/factors/{symbol}", get(get_factors))
@@ -807,6 +815,243 @@ async fn get_dragon_tiger() -> Json<ApiResponse<Vec<DragonTigerData>>> {
 // ============ 选股器 API ============
 
 #[derive(Deserialize)]
+pub struct ScreenerRunRequest {
+    pub definition: ScreenerDefinition,
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+pub struct ScreenerImportRequest {
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScreenerTemplateRecord {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub definition: ScreenerDefinition,
+    pub source_type: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct ScreenerTemplateUpsertRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub definition: ScreenerDefinition,
+    pub source_type: Option<String>,
+}
+
+fn empty_screener_definition() -> ScreenerDefinition {
+    ScreenerDefinition {
+        name: None,
+        description: None,
+        logic: ScreenerGroup {
+            id: "root".to_string(),
+            operator: ScreenerLogic::And,
+            children: vec![],
+        },
+        sorts: vec![],
+        columns: vec![],
+        source: None,
+        import_meta: None,
+    }
+}
+
+fn empty_screener_result() -> ScreenerExecutionResult {
+    ScreenerExecutionResult {
+        total_count: 0,
+        rows: vec![],
+    }
+}
+
+async fn get_screener_catalog() -> Json<ApiResponse<Vec<ScreenerCatalogField>>> {
+    ok_response(ScreenerService::new().catalog().to_vec())
+}
+
+async fn run_screener_definition(
+    State(state): State<AppState>,
+    Json(req): Json<ScreenerRunRequest>,
+) -> Json<ApiResponse<ScreenerExecutionResult>> {
+    let quotes = state.cache.all_quotes.read().await.clone();
+    match ScreenerService::new().execute(&req.definition, &quotes, req.limit) {
+        Ok(result) => ok_response(result),
+        Err(errors) => Json(ApiResponse {
+            success: false,
+            data: empty_screener_result(),
+            message: serde_json::to_string(&errors).unwrap_or_else(|_| "validation failed".to_string()),
+        }),
+    }
+}
+
+async fn import_eastmoney_screener(
+    Json(req): Json<ScreenerImportRequest>,
+) -> Json<ApiResponse<ScreenerDefinition>> {
+    match ScreenerService::new().import_eastmoney_url(&req.url) {
+        Ok(definition) => ok_response(definition),
+        Err(error) => Json(ApiResponse {
+            success: false,
+            data: empty_screener_definition(),
+            message: error.message,
+        }),
+    }
+}
+
+async fn list_screener_templates(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<Vec<ScreenerTemplateRecord>>> {
+    let db = state.db.lock().unwrap();
+    let mut stmt = match db.prepare(
+        "SELECT id, name, description, definition_json, source_type, created_at, updated_at FROM screener_templates ORDER BY updated_at DESC"
+    ) {
+        Ok(stmt) => stmt,
+        Err(error) => return err_response(&format!("Failed to load screener templates: {}", error)),
+    };
+
+    let templates = stmt
+        .query_map([], |row| {
+            let definition_json: String = row.get(3)?;
+            let definition = serde_json::from_str(&definition_json).unwrap_or_else(|_| empty_screener_definition());
+            Ok(ScreenerTemplateRecord {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                definition,
+                source_type: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+        .unwrap()
+        .filter_map(|item| item.ok())
+        .collect::<Vec<_>>();
+
+    ok_response(templates)
+}
+
+async fn create_screener_template(
+    State(state): State<AppState>,
+    Json(req): Json<ScreenerTemplateUpsertRequest>,
+) -> Json<ApiResponse<ScreenerTemplateRecord>> {
+    if let Err(errors) = ScreenerService::new().validate_definition(&req.definition) {
+        return Json(ApiResponse {
+            success: false,
+            data: ScreenerTemplateRecord {
+                id: String::new(),
+                name: String::new(),
+                description: None,
+                definition: empty_screener_definition(),
+                source_type: String::new(),
+                created_at: String::new(),
+                updated_at: String::new(),
+            },
+            message: serde_json::to_string(&errors).unwrap_or_else(|_| "validation failed".to_string()),
+        });
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let source_type = req.source_type.unwrap_or_else(|| "manual".to_string());
+    let definition_json = serde_json::to_string(&req.definition).unwrap_or_else(|_| "{}".to_string());
+
+    let db = state.db.lock().unwrap();
+    match db.execute(
+        "INSERT INTO screener_templates (id, user_id, name, description, definition_json, source_type, created_at, updated_at) VALUES (?1, 'default', ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, req.name, req.description, definition_json, source_type, now, now],
+    ) {
+        Ok(_) => ok_response(ScreenerTemplateRecord {
+            id,
+            name: req.name,
+            description: req.description,
+            definition: req.definition,
+            source_type,
+            created_at: now.clone(),
+            updated_at: now,
+        }),
+        Err(error) => Json(ApiResponse {
+            success: false,
+            data: ScreenerTemplateRecord {
+                id: String::new(),
+                name: String::new(),
+                description: None,
+                definition: empty_screener_definition(),
+                source_type: String::new(),
+                created_at: String::new(),
+                updated_at: String::new(),
+            },
+            message: format!("Failed to create screener template: {}", error),
+        }),
+    }
+}
+
+async fn update_screener_template(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ScreenerTemplateUpsertRequest>,
+) -> Json<ApiResponse<ScreenerTemplateRecord>> {
+    if let Err(errors) = ScreenerService::new().validate_definition(&req.definition) {
+        return Json(ApiResponse {
+            success: false,
+            data: ScreenerTemplateRecord {
+                id: String::new(),
+                name: String::new(),
+                description: None,
+                definition: empty_screener_definition(),
+                source_type: String::new(),
+                created_at: String::new(),
+                updated_at: String::new(),
+            },
+            message: serde_json::to_string(&errors).unwrap_or_else(|_| "validation failed".to_string()),
+        });
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let source_type = req.source_type.unwrap_or_else(|| "manual".to_string());
+    let definition_json = serde_json::to_string(&req.definition).unwrap_or_else(|_| "{}".to_string());
+
+    let db = state.db.lock().unwrap();
+    match db.execute(
+        "UPDATE screener_templates SET name = ?2, description = ?3, definition_json = ?4, source_type = ?5, updated_at = ?6 WHERE id = ?1",
+        rusqlite::params![id, req.name, req.description, definition_json, source_type, now],
+    ) {
+        Ok(_) => ok_response(ScreenerTemplateRecord {
+            id,
+            name: req.name,
+            description: req.description,
+            definition: req.definition,
+            source_type,
+            created_at: String::new(),
+            updated_at: now,
+        }),
+        Err(error) => Json(ApiResponse {
+            success: false,
+            data: ScreenerTemplateRecord {
+                id: String::new(),
+                name: String::new(),
+                description: None,
+                definition: empty_screener_definition(),
+                source_type: String::new(),
+                created_at: String::new(),
+                updated_at: String::new(),
+            },
+            message: format!("Failed to update screener template: {}", error),
+        }),
+    }
+}
+
+async fn delete_screener_template(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<String>> {
+    let db = state.db.lock().unwrap();
+    match db.execute("DELETE FROM screener_templates WHERE id = ?1", rusqlite::params![id]) {
+        Ok(_) => ok_response("ok".to_string()),
+        Err(error) => err_response(&format!("Failed to delete screener template: {}", error)),
+    }
+}
+#[derive(Deserialize)]
 pub struct ScreenerReq {
     pub min_pe: Option<f64>,        // 最小市盈率
     pub max_pe: Option<f64>,        // 最大市盈率
@@ -1507,5 +1752,214 @@ async fn create_strategy_version(
             created_at: now,
         }),
         Err(e) => Json(ApiResponse { success: false, data: StrategyVersion { id: String::new(), strategy_id: String::new(), version: 0, code: String::new(), description: None, created_at: String::new() }, message: format!("创建版本失败: {}", e) }),
+    }
+}
+
+#[cfg(test)]
+mod screener_route_tests {
+    use super::*;
+    use axum::{body::{to_bytes, Body}, http::{Request, StatusCode}};
+    use crate::db::init_db_at;
+    use crate::services::scanner::ScannerCache;
+    use chrono::Utc;
+    use tower::ServiceExt;
+
+    fn temp_db_path(name: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("quantrust-routes-{}-{}.db", name, uuid::Uuid::new_v4()));
+        path
+    }
+
+    fn sample_quote() -> StockQuote {
+        StockQuote {
+            symbol: "000001.SZ".to_string(),
+            name: "Alpha".to_string(),
+            price: 12.0,
+            change: 0.5,
+            change_pct: 4.0,
+            open: 11.4,
+            high: 12.2,
+            low: 11.1,
+            pre_close: 11.5,
+            volume: 1_000_000.0,
+            turnover: 12_000_000.0,
+            turnover_rate: 2.0,
+            amplitude: 5.0,
+            pe_ratio: 18.0,
+            total_market_cap: 50_000_000.0,
+            circulating_market_cap: 40_000_000.0,
+            timestamp: Utc::now(),
+            bid_prices: vec![],
+            bid_volumes: vec![],
+            ask_prices: vec![],
+            ask_volumes: vec![],
+        }
+    }
+
+    async fn response_json(response: axum::response::Response) -> serde_json::Value {
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn app_with_quote() -> (Router, std::path::PathBuf) {
+        let cache = Arc::new(ScannerCache::new());
+        *cache.all_quotes.write().await = vec![sample_quote()];
+
+        let db_path = temp_db_path("screener");
+        let state = AppState {
+            cache,
+            provider: Arc::new(DataProvider::new()),
+            db: init_db_at(&db_path).unwrap(),
+            sim_state: Arc::new(SimState::default()),
+        };
+
+        (create_router(state), db_path)
+    }
+
+    #[tokio::test]
+    async fn screener_routes_expose_catalog_run_and_import() {
+        let (app, db_path) = app_with_quote().await;
+
+        let catalog_response = app.clone().oneshot(
+            Request::builder().uri("/api/screener/catalog").body(Body::empty()).unwrap()
+        ).await.unwrap();
+        assert_eq!(catalog_response.status(), StatusCode::OK);
+        let catalog_json = response_json(catalog_response).await;
+        assert_eq!(catalog_json["success"], true);
+        assert!(catalog_json["data"].as_array().unwrap().iter().any(|field| field["field"] == "latest_price"));
+
+        let run_payload = serde_json::json!({
+            "definition": {
+                "name": "Route run",
+                "logic": {
+                    "id": "root",
+                    "operator": "AND",
+                    "children": [
+                        {
+                            "id": "price-band",
+                            "field": "latest_price",
+                            "operator": "between",
+                            "value": [10.0, 20.0]
+                        }
+                    ]
+                },
+                "sorts": [{ "field": "change_pct", "direction": "desc" }],
+                "columns": ["symbol", "latest_price"]
+            },
+            "limit": 10
+        });
+        let run_response = app.clone().oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/screener/run")
+                .header("content-type", "application/json")
+                .body(Body::from(run_payload.to_string()))
+                .unwrap()
+        ).await.unwrap();
+        assert_eq!(run_response.status(), StatusCode::OK);
+        let run_json = response_json(run_response).await;
+        assert_eq!(run_json["success"], true);
+        assert_eq!(run_json["data"]["total_count"], 1);
+
+        let import_payload = serde_json::json!({
+            "url": "https://xuangu.eastmoney.com/result?filters=latest_price:between:10..20;change_pct:>=:3"
+        });
+        let import_response = app.clone().oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/screener/import-eastmoney")
+                .header("content-type", "application/json")
+                .body(Body::from(import_payload.to_string()))
+                .unwrap()
+        ).await.unwrap();
+        assert_eq!(import_response.status(), StatusCode::OK);
+        let import_json = response_json(import_response).await;
+        assert_eq!(import_json["success"], true);
+        assert_eq!(import_json["data"]["importMeta"]["importedConditions"], 2);
+
+        std::fs::remove_file(db_path).ok();
+    }
+
+    #[tokio::test]
+    async fn screener_routes_support_template_crud() {
+        let (app, db_path) = app_with_quote().await;
+
+        let create_payload = serde_json::json!({
+            "name": "Momentum template",
+            "description": "Saved from test",
+            "definition": {
+                "name": "Saved",
+                "logic": {
+                    "id": "root",
+                    "operator": "AND",
+                    "children": [
+                        {
+                            "id": "pct-up",
+                            "field": "change_pct",
+                            "operator": ">=",
+                            "value": 3.0
+                        }
+                    ]
+                },
+                "sorts": [],
+                "columns": ["symbol", "change_pct"]
+            },
+            "source_type": "manual"
+        });
+        let create_response = app.clone().oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/screener/templates")
+                .header("content-type", "application/json")
+                .body(Body::from(create_payload.to_string()))
+                .unwrap()
+        ).await.unwrap();
+        assert_eq!(create_response.status(), StatusCode::OK);
+        let create_json = response_json(create_response).await;
+        let template_id = create_json["data"]["id"].as_str().unwrap().to_string();
+
+        let list_response = app.clone().oneshot(
+            Request::builder().uri("/api/screener/templates").body(Body::empty()).unwrap()
+        ).await.unwrap();
+        assert_eq!(list_response.status(), StatusCode::OK);
+        let list_json = response_json(list_response).await;
+        assert_eq!(list_json["success"], true);
+        assert_eq!(list_json["data"].as_array().unwrap().len(), 1);
+
+        let update_payload = serde_json::json!({
+            "name": "Momentum template v2",
+            "description": "Updated",
+            "definition": {
+                "name": "Saved",
+                "logic": {
+                    "id": "root",
+                    "operator": "AND",
+                    "children": []
+                },
+                "sorts": [],
+                "columns": ["symbol"]
+            },
+            "source_type": "manual"
+        });
+        let update_response = app.clone().oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/screener/templates/{template_id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(update_payload.to_string()))
+                .unwrap()
+        ).await.unwrap();
+        assert_eq!(update_response.status(), StatusCode::OK);
+
+        let delete_response = app.oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/screener/templates/{template_id}"))
+                .body(Body::empty())
+                .unwrap()
+        ).await.unwrap();
+        assert_eq!(delete_response.status(), StatusCode::OK);
+
+        std::fs::remove_file(db_path).ok();
     }
 }

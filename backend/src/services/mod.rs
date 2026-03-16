@@ -1,4 +1,4 @@
-pub mod anomaly;
+﻿pub mod anomaly;
 pub mod news_analyzer;
 pub mod hot_stocks;
 pub mod backtest;
@@ -9,6 +9,7 @@ pub mod financial;
 pub mod capital_flow;
 pub mod notification;
 pub mod trading;
+pub mod screener;
 
 pub use anomaly::AnomalyDetector;
 pub use news_analyzer::{NewsAnalyzer, Sentiment, AnomalyPrediction};
@@ -21,3 +22,4 @@ pub use financial::{FinancialService, FinancialData, FinancialFilter, DragonTige
 pub use capital_flow::{CapitalFlowService, CapitalFlow, SectorFlow, FlowAnomaly};
 pub use notification::{NotificationService, AlertManager, Notification, NotificationType};
 pub use trading::{TradingEngine, Broker, Order, Position, Account, FutuConfig, OrderType, Direction, OrderStatus};
+pub use screener::ScreenerService;
