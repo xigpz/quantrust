@@ -2,13 +2,11 @@
  * StockDetailModal - 股票详情弹窗
  * Design: 暗夜终端 - 多标签详情面板，K线图 + 基本信息 + 资金流向
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell
-} from 'recharts';
+import DailyKChart from './DailyKChart';
+import OfficialIntradayChart from './OfficialIntradayChart';
 import { TrendingUp, TrendingDown, RefreshCw, X, ExternalLink, Star } from 'lucide-react';
 import { formatPrice, formatPercent, formatNumber, getChangeColor, addToWatchlist, removeFromWatchlist } from '@/hooks/useMarketData';
 import { toast } from 'sonner';
@@ -55,34 +53,6 @@ interface MoneyFlowDetail {
   small_inflow: number;
 }
 
-// 自定义K线蜡烛图 Tooltip
-function CandleTooltip({ active, payload }: any) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload;
-  if (!d) return null;
-  const isUp = d.close >= d.open;
-  return (
-    <div className="bg-card border border-border rounded-lg p-2.5 text-xs shadow-xl">
-      <div className="text-muted-foreground mb-1.5">{d.date}</div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-        <span className="text-muted-foreground">开盘</span>
-        <span className="font-mono-data text-right">{d.open.toFixed(2)}</span>
-        <span className="text-muted-foreground">收盘</span>
-        <span className={`font-mono-data text-right ${isUp ? 'text-up' : 'text-down'}`}>{d.close.toFixed(2)}</span>
-        <span className="text-muted-foreground">最高</span>
-        <span className="font-mono-data text-right text-up">{d.high.toFixed(2)}</span>
-        <span className="text-muted-foreground">最低</span>
-        <span className="font-mono-data text-right text-down">{d.low.toFixed(2)}</span>
-        <span className="text-muted-foreground">成交量</span>
-        <span className="font-mono-data text-right">{formatNumber(d.volume, 0)}</span>
-      </div>
-    </div>
-  );
-}
-
-// 之前尝试用自定义蜡烛图形状，但在 Recharts 中难以稳定拿到 y 轴 scale，
-// 导致某些环境下 K 线实体不显示。这里先退回为更稳定的收盘价折线图。
-
 // 资金流向条形图
 function MoneyFlowBar({ label, value, maxVal }: { label: string; value: number; maxVal: number }) {
   const isPositive = value >= 0;
@@ -112,11 +82,12 @@ interface StockDetailModalProps {
 export default function StockDetailModal({ symbol, name, onClose }: StockDetailModalProps) {
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [intradayData, setIntradayData] = useState<any>(null);
   const [moneyFlow, setMoneyFlow] = useState<MoneyFlowDetail | null>(null);
   const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<'1m' | '5m' | '15m' | '1d'>('1d');
-  
+
   // period 对应的 API 参数 (直接使用 period 字符串)
   const periodMap = {
     '1m': { count: 240 },    // 1分钟
@@ -131,20 +102,29 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
     if (!symbol) return;
     setLoading(true);
     try {
-      const [detailRes, candleRes, flowRes, watchlistRes, newsRes] = await Promise.allSettled([
+      // 根据 period 获取不同的数据
+      const isDaily = period === '1d';
+      const range = isDaily ? '1d' : period;
+
+      const [detailRes, candleRes, intradayRes, flowRes, watchlistRes, newsRes] = await Promise.allSettled([
         fetch(`${API_BASE}/api/quotes/${symbol}`).then(r => r.json()),
-        fetch(`${API_BASE}/api/candles/${symbol}?period=${period}&count=${periodMap[period].count}`).then(r => r.json()),
+        // 日线用日K线数据，分时用对应周期的K线数据
+        fetch(`${API_BASE}/api/candles/${symbol}?period=${period}&count=${isDaily ? 120 : 240}`).then(r => r.json()),
+        // 分时数据
+        fetch(`${API_BASE}/api/intraday/${symbol}?range=${range}`).then(r => r.json()),
         fetch(`${API_BASE}/api/money-flow`).then(r => r.json()),
         fetch(`${API_BASE}/api/watchlist`).then(r => r.json()),
         fetch(`${API_BASE}/api/news/${symbol}`).then(r => r.json()),
       ]);
 
       if (detailRes.status === 'fulfilled' && detailRes.value.success) {
-        // /api/quotes/{symbol} returns StockQuote which has all the fields we need
         setDetail(detailRes.value.data);
       }
       if (candleRes.status === 'fulfilled' && candleRes.value.success) {
         setCandles(candleRes.value.data || []);
+      }
+      if (intradayRes.status === 'fulfilled' && intradayRes.value.success) {
+        setIntradayData(intradayRes.value.data);
       }
       if (flowRes.status === 'fulfilled' && flowRes.value.success) {
         const flows: MoneyFlowDetail[] = flowRes.value.data || [];
@@ -174,41 +154,27 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
     if (symbol) {
       setDetail(null);
       setCandles([]);
+      setIntradayData(null);
       setMoneyFlow(null);
       fetchDetail();
     }
   }, [symbol, fetchDetail]);
 
   // 处理K线数据 - 所有周期数据返回都是降序，需要反转成升序
-  const sortedCandles = [...candles].reverse();
-  
-  const chartData = sortedCandles.map(c => {
-    // 根据不同周期格式化横坐标
-    let dateLabel: string;
-    if (period === '1m' || period === '5m' || period === '15m') {
-      // 分时数据：显示小时:分钟
-      const ts = c.timestamp.replace(' ', 'T');
-      const d = new Date(ts);
-      dateLabel = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-    } else {
-      // 日周月线：显示日期
-      dateLabel = c.timestamp.slice(0, 10);
-    }
-    return {
-      date: dateLabel,
+  const sortedCandles = useMemo(() => {
+    return [...candles].reverse().map(c => ({
+      timestamp: c.timestamp,
       open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
       volume: c.volume,
-      isUp: c.close >= c.open,
-    };
-  });
+      turnover: c.turnover,
+    }));
+  }, [candles]);
 
-  // 计算K线Y轴范围
-  const prices = chartData.flatMap(d => [d.high, d.low]).filter(Boolean);
-  const minPrice = prices.length ? Math.min(...prices) * 0.995 : 0;
-  const maxPrice = prices.length ? Math.max(...prices) * 1.005 : 100;
+  // 判断是否显示分时图（1m/5m/15m显示分时，1d显示日K线）
+  const showIntraday = period !== '1d' && intradayData?.points?.length > 0;
 
   const isUp = (detail?.change_pct ?? 0) >= 0;
   const maxFlowVal = moneyFlow
@@ -223,7 +189,7 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
 
   return (
     <Dialog open={!!symbol} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-3xl w-full bg-card border-border text-foreground p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col" showCloseButton={false}>
+      <DialogContent className="max-w-[90vw] w-full bg-card border-border text-foreground p-0 gap-0 overflow-hidden max-h-[95vh] flex flex-col" showCloseButton={false}>
         {/* Header */}
         <DialogHeader className="px-5 py-3.5 border-b border-border shrink-0">
           <div className="flex items-center justify-between">
@@ -322,84 +288,39 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
             <TabsContent value="chart" className="px-5 pb-5 mt-3">
               {/* Period Selector */}
               <div className="flex gap-1 mb-3">
-                {(['1m', '5m', '15m', '1d'] as const).map(p => (
+                {(['1d', 'intraday'] as const).map(p => (
                   <button
                     key={p}
-                    onClick={() => setPeriod(p)}
+                    onClick={() => setPeriod(p === 'intraday' ? '5m' : '1d')}
                     className={`text-xs px-2.5 py-1 rounded transition-colors ${
-                      period === p
+                      (p === 'intraday' ? period !== '1d' : period === '1d')
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {p === '1m' ? '1分' : p === '5m' ? '5分' : p === '15m' ? '15分' : '日线'}
+                    {p === '1d' ? '日线' : '分时'}
                   </button>
                 ))}
               </div>
 
-              {chartData.length > 0 ? (
-                <div>
-                  {/* Price Chart - 使用收盘价折线替代自定义蜡烛，保证稳定显示 */}
-                  <ResponsiveContainer width="100%" height={240}>
-                    <ComposedChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 45 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="oklch(1 0 0 / 5%)" />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 9, fill: 'oklch(0.6 0.01 256)' }}
-                        tickLine={false}
-                        interval={Math.floor(chartData.length / 6)}
-                      />
-                      <YAxis
-                        domain={[minPrice, maxPrice]}
-                        tick={{ fontSize: 9, fill: 'oklch(0.6 0.01 256)' }}
-                        tickLine={false}
-                        tickFormatter={(v) => v.toFixed(2)}
-                        width={44}
-                      />
-                      <Tooltip content={<CandleTooltip />} />
-                      <Line
-                        type="monotone"
-                        dataKey="close"
-                        stroke="#f97316"
-                        dot={false}
-                        strokeWidth={1.6}
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-
-                  {/* Volume Chart */}
-                  <ResponsiveContainer width="100%" height={70}>
-                    <ComposedChart data={chartData} margin={{ top: 2, right: 5, bottom: 0, left: 45 }}>
-                      <XAxis dataKey="date" hide />
-                      <YAxis
-                        tick={{ fontSize: 8, fill: 'oklch(0.6 0.01 256)' }}
-                        tickLine={false}
-                        tickFormatter={(v) => formatNumber(v, 0)}
-                        width={44}
-                      />
-                      <Bar dataKey="volume" maxBarSize={8}>
-                        {chartData.map((entry, index) => (
-                          <Cell
-                            key={`vol-${index}`}
-                            fill={entry.isUp ? 'rgba(239,68,68,0.6)' : 'rgba(34,197,94,0.6)'}
-                          />
-                        ))}
-                      </Bar>
-                    </ComposedChart>
-                  </ResponsiveContainer>
+              {/* 东方财富官方风格K线图/分时图 */}
+              {loading ? (
+                <div className="h-[370px] flex items-center justify-center text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>加载K线数据...</span>
+                  </div>
                 </div>
+              ) : showIntraday && intradayData ? (
+                <OfficialIntradayChart series={intradayData} />
+              ) : sortedCandles.length > 0 ? (
+                <DailyKChart candles={sortedCandles} period="1d" height={370} />
               ) : (
-                <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                  {loading ? (
-                    <div className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>加载K线数据...</span>
-                    </div>
-                  ) : (
-                    <span>暂无K线数据</span>
-                  )}
+                <div className="h-[370px] flex items-center justify-center text-muted-foreground">
+                  <span>暂无K线数据</span>
                 </div>
               )}
+
             </TabsContent>
 
             {/* 基本信息 Tab */}
