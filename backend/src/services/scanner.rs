@@ -93,9 +93,19 @@ impl MarketScanner {
             }
         };
 
+        // 获取概念板块（用于更精确的个股板块归属）
+        let concept_sectors = match self.provider.get_concept_sectors().await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to fetch concept sectors: {}", e);
+                Vec::new()
+            }
+        };
+
         // 构建股票到板块的映射（获取热门板块的个股）
         let mut stock_sector_map: HashMap<String, (String, f64)> = HashMap::new();
-        // 只获取涨幅前10的板块的个股，避免过多API调用
+
+        // 获取行业板块涨幅前10的个股
         let mut top_sectors: Vec<&SectorInfo> = sectors.iter()
             .filter(|s| s.change_pct > 0.0)
             .collect();
@@ -105,6 +115,27 @@ impl MarketScanner {
         for sector in &top_sectors {
             if let Ok(stocks) = self.provider.get_sector_stocks(&sector.code).await {
                 for stock in stocks.iter().take(50) {
+                    if !stock.name.is_empty() {
+                        // 如果没有记录，则插入
+                        stock_sector_map.entry(stock.name.clone()).or_insert((
+                            sector.name.clone(),
+                            sector.change_pct,
+                        ));
+                    }
+                }
+            }
+        }
+
+        // 获取概念板块涨幅前15的个股（概念板块可能有更精确的归属）
+        let mut top_concepts: Vec<&SectorInfo> = concept_sectors.iter()
+            .filter(|s| s.change_pct > 0.0)
+            .collect();
+        top_concepts.sort_by(|a, b| b.change_pct.partial_cmp(&a.change_pct).unwrap_or(std::cmp::Ordering::Equal));
+        top_concepts.truncate(15);
+
+        for sector in &top_concepts {
+            if let Ok(stocks) = self.provider.get_sector_stocks(&sector.code).await {
+                for stock in stocks.iter().take(30) {
                     if !stock.name.is_empty() {
                         stock_sector_map.insert(
                             stock.name.clone(),

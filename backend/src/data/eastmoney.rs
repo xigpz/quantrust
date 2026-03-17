@@ -314,6 +314,116 @@ impl EastMoneyApi {
         Err(anyhow::anyhow!("Failed to fetch candles for {} from all sources", symbol))
     }
 
+    /// 获取分时数据
+    /// range: "1d" = 今日分时, "5d" = 5日分时
+    pub async fn get_intraday(&self, symbol: &str, range: &str) -> Result<IntradaySeries> {
+        let (market, code) = parse_symbol(symbol);
+        let secid = format!("{}.{}", market, code);
+
+        // ndays: 1=今日, 5=5日
+        let ndays = match range {
+            "5d" | "5" => "5",
+            _ => "1",
+        };
+
+        let url = format!(
+            "https://push2.eastmoney.com/api/qt/stock/trends2/get?\
+            fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f17&\
+            fields2=f51,f52,f53,f54,f55,f58&\
+            decet=1&mpi=1000&ut=fa5fd1943c7b386f172d6893dbfba10b&\
+            secid={}&ndays={}&iscr=0&iscca=0",
+            secid, ndays
+        );
+
+        tracing::info!("Fetching intraday data for {} from EastMoney trends API", symbol);
+
+        let resp = self.client.get(&url).send().await?;
+        let text = resp.text().await?;
+
+        // 解析JSONP响应，去掉回调前缀
+        let json_str = if let Some(start) = text.find('(') {
+            if let Some(end) = text.rfind(')') {
+                &text[start+1..end]
+            } else {
+                &text
+            }
+        } else {
+            &text
+        };
+
+        let json: Value = serde_json::from_str(json_str)
+            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
+
+        // 获取股票名称
+        let name = json.get("data")
+            .and_then(|d| d.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or(symbol)
+            .to_string();
+
+        // 获取昨日收盘价
+        let pre_close = json.get("data")
+            .and_then(|d| d.get("preClose"))
+            .and_then(|p| p.as_f64())
+            .unwrap_or(0.0);
+
+        // 解析分时数据
+        let mut points: Vec<IntradayPoint> = Vec::new();
+
+        if let Some(trends) = json.get("data")
+            .and_then(|d| d.get("trends"))
+            .and_then(|t| t.as_array()) {
+
+            for trend in trends {
+                if let Some(line) = trend.as_str() {
+                    // 格式: "2026-03-17 09:30,104.63,104.63,104.63,104.63,104.630"
+                    // 时间,当前价,最高,最低,成交量,成交额
+                    let parts: Vec<&str> = line.split(',').collect();
+                    if parts.len() >= 6 {
+                        let timestamp = parts.get(0).unwrap_or(&"").to_string();
+                        let price = parts.get(1).and_then(|p| p.parse::<f64>().ok()).unwrap_or(0.0);
+                        let high = parts.get(2).and_then(|p| p.parse::<f64>().ok()).unwrap_or(0.0);
+                        let low = parts.get(3).and_then(|p| p.parse::<f64>().ok()).unwrap_or(0.0);
+                        let volume = parts.get(4).and_then(|p| p.parse::<f64>().ok()).unwrap_or(0.0);
+                        let turnover = parts.get(5).and_then(|p| p.parse::<f64>().ok()).unwrap_or(0.0);
+
+                        // 计算涨跌幅
+                        let change = if pre_close > 0.0 {
+                            Some(price - pre_close)
+                        } else {
+                            None
+                        };
+                        let change_pct = if pre_close > 0.0 {
+                            Some((price - pre_close) / pre_close * 100.0)
+                        } else {
+                            None
+                        };
+
+                        points.push(IntradayPoint {
+                            timestamp,
+                            price,
+                            avg_price: (high + low) / 2.0,  // 使用均价估算
+                            volume,
+                            turnover,
+                            change_pct,
+                            change,
+                        });
+                    }
+                }
+            }
+        }
+
+        tracing::info!("Fetched {} intraday points for {}", points.len(), symbol);
+
+        Ok(IntradaySeries {
+            symbol: symbol.to_string(),
+            name,
+            range: range.to_string(),
+            pre_close,
+            points,
+        })
+    }
+
     // 新浪财经获取K线数据（用于分钟级别）
     async fn get_sina_candles(&self, symbol: &str, market: &u8, code: &str, period: &str, count: u32) -> Result<Vec<Candle>> {
         tracing::info!("Fetching {} candles for {} from Sina", period, symbol);
@@ -415,6 +525,43 @@ impl EastMoneyApi {
         }
 
         tracing::info!("Fetched {} sectors", sectors.len());
+        Ok(sectors)
+    }
+
+    /// 获取概念板块列表（用于获取个股所属概念）
+    pub async fn get_concept_sectors(&self) -> Result<Vec<SectorInfo>> {
+        let url = "https://82.push2delay.eastmoney.com/api/qt/clist/get?\
+            pn=1&pz=100&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281\
+            &fltt=2&invt=2&fid=f3&fs=m:90+t:3+f:!50\
+            &fields=f2,f3,f4,f8,f12,f14,f104,f105,f128,f136,f140";
+
+        let resp = self.fetch_json(url).await?;
+        let mut sectors = Vec::new();
+
+        if let Some(data) = resp.get("data") {
+            if let Some(diff) = data.get("diff").and_then(|d| d.as_array()) {
+                for item in diff {
+                    let leading_stock = item["f140"].as_str()
+                        .or_else(|| item["f128"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    sectors.push(SectorInfo {
+                        name: item["f14"].as_str().unwrap_or("").to_string(),
+                        code: item["f12"].as_str().unwrap_or("").to_string(),
+                        change_pct: item["f3"].as_f64().unwrap_or(0.0),
+                        turnover: item["f8"].as_f64().unwrap_or(0.0),
+                        leading_stock,
+                        leading_stock_pct: item["f136"].as_f64().unwrap_or(0.0),
+                        stock_count: item["f104"].as_i64().unwrap_or(0) as i32 + item["f105"].as_i64().unwrap_or(0) as i32,
+                        up_count: item["f104"].as_i64().unwrap_or(0) as i32,
+                        down_count: item["f105"].as_i64().unwrap_or(0) as i32,
+                    });
+                }
+            }
+        }
+
+        tracing::info!("Fetched {} concept sectors", sectors.len());
         Ok(sectors)
     }
 
