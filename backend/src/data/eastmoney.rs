@@ -251,6 +251,8 @@ impl EastMoneyApi {
                     }
                     if !candles.is_empty() {
                         tracing::info!("Fetched {} candles for {} from EastMoney", candles.len(), symbol);
+                        // 反转数据，最新的在前
+                        candles.reverse();
                         return Ok(candles);
                     }
                 }
