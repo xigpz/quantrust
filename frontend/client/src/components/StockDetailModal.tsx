@@ -189,7 +189,7 @@ export default function StockDetailModal({ symbol, name, onClose }: StockDetailM
 
   return (
     <Dialog open={!!symbol} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-[90vw] w-full bg-card border-border text-foreground p-0 gap-0 overflow-hidden max-h-[95vh] flex flex-col" showCloseButton={false}>
+      <DialogContent className="w-[95vw] h-[90vh] bg-card border-border text-foreground p-0 gap-0 overflow-hidden flex flex-col" showCloseButton={false}>
         {/* Header */}
         <DialogHeader className="px-5 py-3.5 border-b border-border shrink-0">
           <div className="flex items-center justify-between">
