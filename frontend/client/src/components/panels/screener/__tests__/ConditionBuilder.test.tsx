@@ -85,6 +85,23 @@ afterEach(() => {
 });
 
 describe("ConditionBuilder", () => {
+  it("renders the builder chrome in Chinese", () => {
+    const view = render(
+      <ConditionBuilder
+        catalog={catalog}
+        definition={sampleDefinition()}
+        importWarningCount={0}
+        onChange={vi.fn()}
+        onRun={vi.fn()}
+      />,
+    );
+
+    expect(view.container.textContent).toContain("选股工作台");
+    expect(view.container.textContent).toContain("结果列");
+    expect(view.container.textContent).toContain("最新价");
+    view.unmount();
+  });
+
   it("adds and removes conditions", () => {
     const onChange = vi.fn();
     const view = render(
@@ -146,7 +163,7 @@ describe("ConditionBuilder", () => {
 
     const runButton = view.container.querySelector('[data-testid="run-screener"]') as HTMLButtonElement;
     expect(runButton.disabled).toBe(true);
-    expect(view.container.textContent).toContain("2 unsupported");
+    expect(view.container.textContent).toContain("2 条暂不支持的导入条件");
 
     click(runButton);
     expect(onRun).not.toHaveBeenCalled();
@@ -180,7 +197,7 @@ describe("ConditionBuilder", () => {
       />,
     );
 
-    expect(view.container.textContent).toContain("Unsupported operator for selected field");
+    expect(view.container.textContent).toContain("所选字段不支持当前运算符");
     view.unmount();
   });
 });

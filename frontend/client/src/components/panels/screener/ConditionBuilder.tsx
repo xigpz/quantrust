@@ -8,6 +8,7 @@ import type {
   ScreenerLogic,
   ScreenerNode,
 } from "@/lib/screener";
+import { getScreenerFieldLabel } from "@/lib/screener";
 import ConditionGroup from "./ConditionGroup";
 
 interface ConditionBuilderProps {
@@ -163,9 +164,9 @@ export default function ConditionBuilder({
       <div className="space-y-3 rounded-2xl border border-border bg-card/80 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-foreground">Screener Workbench</div>
+            <div className="text-sm font-semibold text-foreground">选股工作台</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Build nested conditions, choose result columns, and run against cached market quotes.
+              组合嵌套条件、选择结果列，并基于缓存行情执行筛选。
             </p>
           </div>
           <button
@@ -179,16 +180,16 @@ export default function ConditionBuilder({
             }}
             className="rounded-xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-emerald-950 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
           >
-            Run Screener
+            运行选股
           </button>
         </div>
 
         <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-          <span className="rounded-full border border-border px-2 py-1">{draft.columns.length} columns</span>
-          <span className="rounded-full border border-border px-2 py-1">{catalog.length} fields</span>
+          <span className="rounded-full border border-border px-2 py-1">{draft.columns.length} 个结果列</span>
+          <span className="rounded-full border border-border px-2 py-1">{catalog.length} 个字段</span>
           {importWarningCount > 0 ? (
             <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-amber-200">
-              {importWarningCount} unsupported imported conditions
+              {importWarningCount} 条暂不支持的导入条件
             </span>
           ) : null}
         </div>
@@ -239,7 +240,7 @@ export default function ConditionBuilder({
       />
 
       <div className="rounded-2xl border border-border bg-card/70 p-4">
-        <div className="text-sm font-semibold text-foreground">Result Columns</div>
+        <div className="text-sm font-semibold text-foreground">结果列</div>
         <div className="mt-3 grid grid-cols-2 gap-2">
           {catalog.map((field) => (
             <label key={field.field} className="flex items-center gap-2 rounded-lg border border-border px-2 py-2 text-xs text-foreground">
@@ -248,7 +249,7 @@ export default function ConditionBuilder({
                 checked={draft.columns.includes(field.field)}
                 onChange={() => toggleColumn(field.field)}
               />
-              <span>{field.label}</span>
+              <span>{getScreenerFieldLabel(field.field, field.label)}</span>
             </label>
           ))}
         </div>

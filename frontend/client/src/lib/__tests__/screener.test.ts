@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildScreenerRunPayload,
   buildScreenerTemplatePayload,
+  getScreenerFieldLabel,
+  getScreenerLogicLabel,
+  getScreenerOperatorLabel,
   importEastmoneyScreener,
   normalizeImportedScreenerDefinition,
+  translateScreenerMessage,
   type ScreenerDefinition,
 } from "../screener";
 
@@ -138,5 +142,17 @@ describe("screener client helpers", () => {
 
     expect(payload.definition.logic.children[1]).toEqual(sampleDefinition().logic.children[1]);
     expect(payload.definition.importMeta?.unsupportedConditions).toHaveLength(1);
+  });
+
+  it("exposes Chinese display labels for screener fields, operators, and logic", () => {
+    expect(getScreenerFieldLabel("latest_price")).toBe("最新价");
+    expect(getScreenerOperatorLabel("between")).toBe("区间");
+    expect(getScreenerLogicLabel("AND")).toBe("且");
+  });
+
+  it("translates common screener error messages into Chinese", () => {
+    expect(translateScreenerMessage("Only EastMoney screener URLs are supported")).toBe("仅支持导入东方财富选股链接");
+    expect(translateScreenerMessage("Operator is not supported for change_pct")).toBe("涨跌幅 不支持当前运算符");
+    expect(translateScreenerMessage("field unavailable")).toBe("字段暂不可用");
   });
 });

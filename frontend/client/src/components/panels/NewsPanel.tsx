@@ -1,16 +1,36 @@
 import { useState, useEffect, useContext, useRef } from 'react';
-import { Newspaper, TrendingUp, AlertTriangle, Building2, RefreshCw, ChevronDown, Bell, BellOff, Eye, Activity, ThumbsUp, ThumbsDown, Minus } from 'lucide-react';
+import { Newspaper, TrendingUp, AlertTriangle, Building2, RefreshCw, ChevronDown, Eye, Activity, X } from 'lucide-react';
 import { StockClickContext } from '@/pages/Dashboard';
 
 const API_BASE = '';
 
 // 市场情绪判断
 interface MarketSentiment {
-  score: number; // -100到100
+  score: number;
   level: '极弱' | '偏弱' | '中性' | '偏强' | '极强';
   recommendation: '空仓观望' | '轻仓参与' | '适度参与' | '积极做多';
   reasons: string[];
   newsCount: number;
+}
+
+// 公告类型
+interface StockNotice {
+  art_code: string;
+  title: string;
+  notice_date: string;
+  display_time: string;
+  column_name: string;
+  source_type: string;
+}
+
+// 公告详情
+interface StockNoticeDetail {
+  title: string;
+  content: string;
+  notice_date: string;
+  display_time: string;
+  source: string;
+  column_name: string;
 }
 
 // 分析市场情绪
@@ -18,12 +38,12 @@ function analyzeMarketSentiment(news: any[]): MarketSentiment {
   let positive = 0;
   let negative = 0;
   const reasons: string[] = [];
-  
+
   const keywords = {
-    positive: ['利好','上涨','增长','突破','创新','爆发','涨停','大涨','反弹','回升','景气','强劲','爆发','订单','合作','业绩预增','政策支持'],
+    positive: ['利好','上涨','增长','突破','创新','爆发','涨停','大涨','反弹','回升','景气','强劲','订单','合作','业绩预增','政策支持'],
     negative: ['利空','下跌','亏损','风险','大跌','跌停','暴跌','警示','调查','处罚','减持','业绩预亏','疲软','低迷','震荡'],
   };
-  
+
   for (const n of news) {
     const text = (n.title + ' ' + (n.content || '')).toLowerCase();
     for (const kw of keywords.positive) {
@@ -33,20 +53,64 @@ function analyzeMarketSentiment(news: any[]): MarketSentiment {
       if (text.includes(kw.toLowerCase())) { negative++; reasons.push(n.title.substring(0, 20)); break; }
     }
   }
-  
+
   const total = positive + negative;
   const score = total === 0 ? 0 : Math.round(((positive - negative) / total) * 100);
-  
+
   let level: MarketSentiment['level'];
   let recommendation: MarketSentiment['recommendation'];
-  
+
   if (score >= 60) { level = '极强'; recommendation = '积极做多'; }
   else if (score >= 30) { level = '偏强'; recommendation = '适度参与'; }
   else if (score >= -30) { level = '中性'; recommendation = '轻仓参与'; }
   else if (score >= -60) { level = '偏弱'; recommendation = '空仓观望'; }
   else { level = '极弱'; recommendation = '空仓观望'; }
-  
+
   return { score, level, recommendation, reasons: reasons.slice(0, 5), newsCount: news.length };
+}
+
+// 格式化时间
+function formatTime(timeStr: string): string {
+  if (!timeStr) return '';
+  // timeStr 格式: 2026-03-16 10:30:00
+  try {
+    const date = new Date(timeStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor(diff / (1000 * 60));
+
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return `${minutes}分钟前`;
+    if (hours < 24) return `${hours}小时前`;
+    // 超过24小时显示具体日期
+    return timeStr.substring(0, 16);
+  } catch {
+    return timeStr;
+  }
+}
+
+// 解析后端返回的新闻数据
+function parseNewsFromApi(data: any[]) {
+  return data.map((item: any) => ({
+    art_code: item.art_code,
+    title: item.title,
+    pub_time: item.display_time || item.notice_date,
+    notice_date: item.notice_date,
+    display_time: item.display_time,
+    source: item.column_name || item.source_type || '东方财富',
+    type: getNewsType(item.column_name || item.title),
+    content: '',
+    column_name: item.column_name,
+  }));
+}
+
+function getNewsType(columnName: string, title: string = ''): string {
+  if (!columnName && !title) return '行业';
+  const text = (columnName + ' ' + title).toLowerCase();
+  if (text.includes('政策') || text.includes('央行') || text.includes('证监会')) return '政策';
+  if (text.includes('市场') || text.includes('大盘') || text.includes('指数')) return '市场';
+  return '行业';
 }
 
 export default function NewsPanel() {
@@ -59,7 +123,13 @@ export default function NewsPanel() {
   const [sentiment, setSentiment] = useState<MarketSentiment | null>(null);
   const [monitoredItems, setMonitoredItems] = useState<any[]>([]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [selectedNotice, setSelectedNotice] = useState<StockNotice | null>(null);
+  const [noticeDetail, setNoticeDetail] = useState<StockNoticeDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const monitorIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 默认股票列表用于获取新闻
+  const defaultSymbols = ['000001', '600519', '601318', '600036', '300750'];
 
   const KEYWORD_MAP: Record<string, any> = {
     'AI': { sectors: ['人工智能', '科技', '半导体'], stocks: [{ symbol: '688256', name: '寒武纪' }] },
@@ -132,14 +202,81 @@ export default function NewsPanel() {
 
   const fetchNews = async () => {
     setLoading(true);
-    const allNews = getFallbackNews();
-    const analyzed = allNews.map(n => ({ ...n, ...analyzeNewsRelation(n.title, n.content || '') }));
-    analyzed.sort((a, b) => b.pub_time.localeCompare(a.pub_time));
-    setNews(analyzed);
-    // 分析市场情绪
-    setSentiment(analyzeMarketSentiment(allNews));
+    try {
+      // 从多只股票获取公告
+      const allNotices: any[] = [];
+      for (const symbol of defaultSymbols) {
+        try {
+          const res = await fetch(`${API_BASE}/api/notices/${symbol}?page=1&page_size=10`);
+          const json = await res.json();
+          if (json.success && json.data?.list) {
+            allNotices.push(...parseNewsFromApi(json.data.list));
+          }
+        } catch (e) {
+          console.error(`Failed to fetch notices for ${symbol}:`, e);
+        }
+      }
+
+      // 按时间排序
+      allNotices.sort((a, b) => b.pub_time.localeCompare(a.pub_time));
+
+      // 去重
+      const uniqueNotices = allNotices.filter((item, index, self) =>
+        index === self.findIndex((t) => t.title === item.title)
+      );
+
+      const analyzed = uniqueNotices.map(n => ({ ...n, ...analyzeNewsRelation(n.title, n.content || '') }));
+      setNews(analyzed);
+      setSentiment(analyzeMarketSentiment(analyzed));
+    } catch (e) {
+      console.error('Failed to fetch news:', e);
+      // 使用fallback数据
+      const fallback = getFallbackNews();
+      setNews(fallback);
+      setSentiment(analyzeMarketSentiment(fallback));
+    }
     setLastUpdate(new Date().toLocaleTimeString());
     setLoading(false);
+  };
+
+  // 获取公告详情
+  const fetchNoticeDetail = async (notice: StockNotice) => {
+    setSelectedNotice(notice);
+    setNoticeDetail(null);
+    setDetailLoading(true);
+
+    try {
+      // 尝试从财经新闻API获取详情
+      const newsRes = await fetch(`${API_BASE}/api/news/detail/${notice.art_code}`);
+      const newsJson = await newsRes.json();
+      if (newsJson.success && newsJson.data && newsJson.data.content && !newsJson.data.content.includes('无法获取')) {
+        setNoticeDetail({
+          title: newsJson.data.title,
+          content: newsJson.data.content,
+          notice_date: newsJson.data.pub_time,
+          display_time: newsJson.data.pub_time,
+          source: newsJson.data.source,
+          column_name: newsJson.data.category,
+        });
+        setDetailLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.log('News API failed, trying notice API:', e);
+    }
+
+    // 回退到公告API
+    try {
+      const res = await fetch(`${API_BASE}/api/notice/${notice.art_code}`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setNoticeDetail(json.data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch notice detail:', e);
+    }
+
+    setDetailLoading(false);
   };
 
   useEffect(() => {
@@ -187,7 +324,7 @@ export default function NewsPanel() {
               <RefreshCw class={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
-          
+
           <div class="flex items-center gap-6 mb-3">
             <div>
               <div class="text-xs text-muted-foreground">情绪指数</div>
@@ -202,7 +339,7 @@ export default function NewsPanel() {
               <div class={`text-lg font-bold ${getSentimentColor(sentiment.recommendation)}`}>{sentiment.recommendation}</div>
             </div>
           </div>
-          
+
           {sentiment.reasons.length > 0 && (
             <div class="text-xs text-muted-foreground">
               依据: {sentiment.reasons.join('、')}
@@ -259,18 +396,23 @@ export default function NewsPanel() {
                       <span class={`px-2 py-0.5 text-xs rounded border ${
                         item.type === '政策' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-green-500/20 text-green-400 border-green-500/30'
                       }`}>{item.type}</span>
-                      <span class="text-xs text-muted-foreground">{item.pub_time}</span>
+                      <span class="text-xs text-muted-foreground">{formatTime(item.pub_time)}</span>
                     </div>
                     <h3 class="font-medium text-sm">{item.title}</h3>
                   </div>
                   <ChevronDown class={`w-4 h-4 text-muted-foreground ${expandedNews === i ? 'rotate-180' : ''}`} />
                 </div>
               </div>
-              
+
               {expandedNews === i && (
                 <div class="px-4 pb-4 border-t bg-muted/20">
-                  {item.content && <p class="text-xs text-muted-foreground mt-3">{item.content}</p>}
-                  
+                  <button
+                    onClick={(e) => { e.stopPropagation(); fetchNoticeDetail(item); }}
+                    class="mt-3 px-3 py-1.5 bg-primary text-primary-foreground text-xs rounded hover:bg-primary/80"
+                  >
+                    查看详情
+                  </button>
+
                   {item.sectors?.length > 0 && (
                     <div class="mt-3">
                       <div class="text-xs font-medium mb-1">📌 相关板块</div>
@@ -286,7 +428,7 @@ export default function NewsPanel() {
                       </div>
                     </div>
                   )}
-                  
+
                   {item.stocks?.length > 0 && (
                     <div class="mt-3">
                       <div class="text-xs font-medium mb-1">📈 相关股票</div>
@@ -314,16 +456,56 @@ export default function NewsPanel() {
           ))}
         </div>
       )}
+
+      {/* 公告详情弹窗 */}
+      {selectedNotice && (
+        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedNotice(null)}>
+          <div class="bg-card rounded-lg border max-w-2xl w-full max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div class="flex items-center justify-between p-4 border-b">
+              <h3 class="font-semibold">公告详情</h3>
+              <button onClick={() => setSelectedNotice(null)} class="p-1 hover:bg-muted rounded">
+                <X class="w-5 h-5" />
+              </button>
+            </div>
+            <div class="p-4 overflow-y-auto max-h-[calc(80vh-60px)]">
+              {detailLoading ? (
+                <div class="text-center py-8 text-muted-foreground">加载中...</div>
+              ) : noticeDetail ? (
+                <div class="space-y-4">
+                  <h4 class="text-lg font-medium">{noticeDetail.title}</h4>
+                  <div class="text-xs text-muted-foreground">
+                    <span>公告日期: {noticeDetail.notice_date}</span>
+                    {noticeDetail.display_time && <span class="ml-4">发布时间: {noticeDetail.display_time}</span>}
+                  </div>
+                  {noticeDetail.column_name && (
+                    <div class="text-xs text-muted-foreground">栏目: {noticeDetail.column_name}</div>
+                  )}
+                  {noticeDetail.source && (
+                    <div class="text-xs text-muted-foreground">来源: {noticeDetail.source}</div>
+                  )}
+                  <div class="border-t pt-4">
+                    <div class="prose prose-sm max-w-none whitespace-pre-wrap text-sm">
+                      {noticeDetail.content || '暂无详细内容'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div class="text-center py-8 text-muted-foreground">加载失败</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function getFallbackNews() {
   return [
-    { title: 'AI芯片需求持续爆发 半导体板块再掀涨停潮', pub_time: '2026-03-06 14:30', source: '证券时报', type: '行业', content: 'AI芯片需求持续爆发。' },
-    { title: '新能源车销量同比增45%', pub_time: '2026-03-06 13:00', source: '中汽协', type: '行业', content: '新能源车销量增长。' },
-    { title: '医药板块迎来反弹', pub_time: '2026-03-06 09:30', source: '证券日报', type: '行业', content: '医药板块反弹。' },
-    { title: '央行：保持流动性合理充裕', pub_time: '2026-03-06 15:30', source: '央行', type: '政策', content: '货币政策支持。' },
-    { title: 'A股成交超1.2万亿', pub_time: '2026-03-06 15:00', source: '东方财富', type: '市场', content: '市场交投活跃。' },
+    { title: 'AI芯片需求持续爆发 半导体板块再掀涨停潮', pub_time: '2026-03-16 14:30', source: '证券时报', type: '行业', content: 'AI芯片需求持续爆发。' },
+    { title: '新能源车销量同比增45%', pub_time: '2026-03-16 13:00', source: '中汽协', type: '行业', content: '新能源车销量增长。' },
+    { title: '医药板块迎来反弹', pub_time: '2026-03-16 09:30', source: '证券日报', type: '行业', content: '医药板块反弹。' },
+    { title: '央行：保持流动性合理充裕', pub_time: '2026-03-16 15:30', source: '央行', type: '政策', content: '货币政策支持。' },
+    { title: 'A股成交超1.2万亿', pub_time: '2026-03-16 15:00', source: '东方财富', type: '市场', content: '市场交投活跃。' },
   ];
 }

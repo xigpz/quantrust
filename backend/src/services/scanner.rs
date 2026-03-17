@@ -98,7 +98,7 @@ impl MarketScanner {
             let mut hot_stocks = self.hot_ranker.rank(&quotes, 200);
 
             // 3. 为热点股票获取所属板块（直接查询每只股票的概念）
-            for stock in hot_stocks.iter_mut().take(50) {
+            for stock in hot_stocks.iter_mut() {
                 if let Ok(concepts) = self.provider.get_stock_concepts(&stock.symbol).await {
                     if !concepts.is_empty() {
                         stock.sector_name = concepts[0].clone();

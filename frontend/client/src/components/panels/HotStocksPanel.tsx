@@ -1,8 +1,8 @@
 /**
  * HotStocksPanel - 热点股票监测面板
- * Design: 暗夜终端 - 紧凑数据表格，热度评分可视化
+ * Design: 暗夜终端 - 紧凑数据表格，热度评分可视化，支持滚动刷新
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useHotStocksPaged, formatPrice, formatPercent, formatNumber, getChangeColor } from '@/hooks/useMarketData';
 import { Flame, RefreshCw } from 'lucide-react';
 import { useStockClick } from '@/pages/Dashboard';
@@ -15,6 +15,8 @@ export default function HotStocksPanel() {
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<any[]>([]);
   const [lastPageSize, setLastPageSize] = useState<number>(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isScrolling = useRef(false);
 
   const { data: hotStocks, loading, refetch } = useHotStocksPaged(page, PAGE_SIZE);
   const { openStock } = useStockClick();
@@ -91,10 +93,38 @@ export default function HotStocksPanel() {
 
   const hasMore = lastPageSize === PAGE_SIZE;
 
+  // 滚动刷新
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current || loading || !hasMore || isScrolling.current) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+
+    // 滚动到底部附近时刷新
+    if (scrollTop + clientHeight >= scrollHeight - 100) {
+      isScrolling.current = true;
+      setPage((p) => p + 1);
+      // 重置滚动状态
+      setTimeout(() => {
+        isScrolling.current = false;
+      }, 1000);
+    }
+
+    // 滚动到顶部附近时刷新第一页
+    if (scrollTop < 50) {
+      isScrolling.current = true;
+      setPage(1);
+      setItems([]);
+      refetch();
+      setTimeout(() => {
+        isScrolling.current = false;
+      }, 1000);
+    }
+  }, [loading, hasMore, refetch]);
+
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col h-full overflow-y-auto" ref={scrollRef} onScroll={handleScroll}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border sticky top-0 bg-card z-10">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border sticky top-0 bg-card z-10 shrink-0">
         <div className="flex items-center gap-2">
           <Flame className="w-4 h-4 text-orange-400" />
           <h2 className="text-sm font-semibold">热点股票</h2>
@@ -181,6 +211,9 @@ export default function HotStocksPanel() {
                 {sortKey === 'turnover_rate' && <span className="text-[9px]">{sortDir === 'asc' ? '▲' : '▼'}</span>}
               </button>
             </th>
+            <th className="text-left py-2 px-2 font-medium">
+              所属板块
+            </th>
             <th className="text-right py-2 px-3 font-medium">
               <button
                 type="button"
@@ -198,7 +231,7 @@ export default function HotStocksPanel() {
             <tr
               key={stock.symbol}
               onClick={() => openStock(stock.symbol, stock.name)}
-              className="border-b border-border/50 hover:bg-accent/50 transition-colors cursor-pointer"
+              className="border-b border-border/50 hover:bg-muted/60 transition-colors cursor-pointer"
             >
               <td className="py-1.5 px-3">
                 <div className="flex flex-col">
@@ -217,6 +250,16 @@ export default function HotStocksPanel() {
               </td>
               <td className="text-right py-1.5 px-2 font-mono-data text-muted-foreground">
                 {stock.turnover_rate.toFixed(1)}%
+              </td>
+              <td className="py-1.5 px-2">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-foreground truncate max-w-[80px]" title={stock.sector_name}>
+                    {stock.sector_name || '-'}
+                  </span>
+                  <span className={`text-[9px] font-mono-data ${getChangeColor(stock.sector_change_pct)}`}>
+                    {stock.sector_change_pct ? formatPercent(stock.sector_change_pct) : '-'}
+                  </span>
+                </div>
               </td>
               <td className="text-right py-1.5 px-3">
                 <div className="flex items-center justify-end gap-1.5">
@@ -242,14 +285,14 @@ export default function HotStocksPanel() {
           ))}
           {(!items || items.length === 0) && !loading && (
             <tr>
-              <td colSpan={6} className="text-center py-8 text-muted-foreground">
+              <td colSpan={7} className="text-center py-8 text-muted-foreground">
                 暂无数据（非交易时段）
               </td>
             </tr>
           )}
           {loading && (
             <tr>
-              <td colSpan={6} className="text-center py-8 text-muted-foreground">
+              <td colSpan={7} className="text-center py-8 text-muted-foreground">
                 <RefreshCw className="w-4 h-4 animate-spin mx-auto" />
               </td>
             </tr>

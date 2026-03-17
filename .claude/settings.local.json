@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(cargo run:*)",
+      "Bash(cargo build:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)",
+      "Bash(pnpm tsc:*)"
+    ]
+  }
+}

@@ -10,6 +10,7 @@ pub mod capital_flow;
 pub mod notification;
 pub mod trading;
 pub mod screener;
+pub mod ai_pattern;
 
 pub use anomaly::AnomalyDetector;
 pub use news_analyzer::{NewsAnalyzer, Sentiment, AnomalyPrediction};
@@ -23,3 +24,4 @@ pub use capital_flow::{CapitalFlowService, CapitalFlow, SectorFlow, FlowAnomaly}
 pub use notification::{NotificationService, AlertManager, Notification, NotificationType};
 pub use trading::{TradingEngine, Broker, Order, Position, Account, FutuConfig, OrderType, Direction, OrderStatus};
 pub use screener::ScreenerService;
+pub use ai_pattern::{AIPatternService, PatternResult, PatternType, BreakoutDirection, TrendType, ScreenParams};

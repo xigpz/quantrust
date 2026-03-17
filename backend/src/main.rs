@@ -54,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
         provider: provider.clone(),
         db: db.clone(),
         sim_state: Arc::new(SimState::default()),
+        config: Arc::new(std::sync::RwLock::new(api::routes::AppConfig::default())),
     };
 
     // Start periodic scan task (every 30 seconds)

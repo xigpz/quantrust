@@ -78,6 +78,8 @@ pub struct HotStock {
     pub turnover_rate: f64,
     pub hot_score: f64,       // 热度评分
     pub hot_reason: String,   // 热度原因
+    pub sector_name: String,  // 所属板块
+    pub sector_change_pct: f64, // 板块涨跌幅
     pub timestamp: DateTime<Utc>,
 }
 
@@ -174,4 +176,54 @@ pub struct MoneyFlow {
     pub medium_inflow: f64,        // 中单净流入
     pub small_inflow: f64,         // 小单净流入
     pub timestamp: DateTime<Utc>,
+}
+
+/// 公告列表项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockNotice {
+    pub art_code: String,
+    pub title: String,
+    pub notice_date: String,
+    pub display_time: String,
+    pub column_name: String,
+    pub source_type: String,
+}
+
+/// 公告列表响应
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StockNoticesResponse {
+    pub list: Vec<StockNotice>,
+    pub total_hits: i32,
+    pub page_index: i32,
+    pub page_size: i32,
+}
+
+/// 公告详情
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StockNoticeDetail {
+    pub title: String,
+    pub content: String,
+    pub notice_date: String,
+    pub display_time: String,
+    pub source: String,
+    pub column_name: String,
+}
+
+/// 财经新闻项
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StockNews {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub pub_time: String,
+    pub source: String,
+    pub url: String,
+    pub category: String,
+}
+
+/// 新闻列表响应
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StockNewsResponse {
+    pub list: Vec<StockNews>,
+    pub total: i32,
 }

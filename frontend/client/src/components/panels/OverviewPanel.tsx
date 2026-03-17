@@ -18,10 +18,10 @@ function IndexCard({ name, price, change, change_pct, volume, turnover, onClick 
   return (
     <div
       className={`rounded-lg p-3.5 panel-glow border ${
-      isUp 
-        ? 'dark:from-red-950/60 dark:to-red-900/30 dark:border-red-800/30 bg-red-50 border-red-200'
-        : isDown 
-        ? 'dark:from-green-950/60 dark:to-green-900/30 dark:border-green-800/30 bg-green-50 border-green-200'
+      isUp
+        ? 'dark:from-red-950/60 dark:to-red-900/30 dark:border-red-800/30 from-red-50 to-red-100 border-red-200'
+        : isDown
+        ? 'dark:from-green-950/60 dark:to-green-900/30 dark:border-green-800/30 from-green-50 to-green-100 border-green-200'
         : 'bg-card border-border/50'
     } ${onClick ? 'cursor-pointer hover:border-primary/60 hover:shadow-lg transition-colors' : ''}`}
       onClick={onClick}

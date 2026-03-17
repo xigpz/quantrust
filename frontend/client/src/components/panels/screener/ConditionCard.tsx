@@ -1,4 +1,13 @@
-import type { ImportedConditionWarning, ScreenerCatalogField, ScreenerCondition, ScreenerOperator, ScreenerValue } from "@/lib/screener";
+import {
+  getScreenerFieldLabel,
+  getScreenerOperatorLabel,
+  translateScreenerMessage,
+  type ImportedConditionWarning,
+  type ScreenerCatalogField,
+  type ScreenerCondition,
+  type ScreenerOperator,
+  type ScreenerValue,
+} from "@/lib/screener";
 
 interface ConditionCardProps {
   condition: ScreenerCondition;
@@ -47,20 +56,20 @@ export default function ConditionCard({ condition, catalog, error, warning, onCh
       className={`rounded-xl border p-3 space-y-2 ${error ? "border-red-500/60 bg-red-500/5" : "border-border bg-background/70"}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-medium text-foreground">Condition</div>
+        <div className="text-xs font-medium text-foreground">条件</div>
         <button
           type="button"
           data-testid={`remove-node-${condition.id}`}
           onClick={onRemove}
           className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
         >
-          Remove
+          删除
         </button>
       </div>
 
       <div className="grid gap-2 md:grid-cols-[1.3fr,0.9fr,1fr]">
         <label className="grid gap-1 text-[11px] text-muted-foreground">
-          Field
+          字段
           <select
             value={condition.field}
             onChange={(event) => {
@@ -71,17 +80,17 @@ export default function ConditionCard({ condition, catalog, error, warning, onCh
             }}
             className="rounded-md border border-border bg-card px-2 py-2 text-xs text-foreground"
           >
-            <option value="">Select field</option>
+            <option value="">选择字段</option>
             {catalog.map((entry) => (
               <option key={entry.field} value={entry.field}>
-                {entry.label}
+                {getScreenerFieldLabel(entry.field, entry.label)}
               </option>
             ))}
           </select>
         </label>
 
         <label className="grid gap-1 text-[11px] text-muted-foreground">
-          Operator
+          运算符
           <select
             value={condition.operator}
             onChange={(event) => onChange({ ...condition, operator: event.target.value as ScreenerOperator })}
@@ -89,25 +98,25 @@ export default function ConditionCard({ condition, catalog, error, warning, onCh
           >
             {operators.map((operator) => (
               <option key={operator} value={operator}>
-                {operator}
+                {getScreenerOperatorLabel(operator)}
               </option>
             ))}
           </select>
         </label>
 
         <label className="grid gap-1 text-[11px] text-muted-foreground">
-          Value
+          值
           <input
             value={stringifyValue(condition.value)}
             onChange={(event) => onChange({ ...condition, value: parseValue(condition.operator, event.target.value) })}
-            placeholder={condition.operator === "between" ? "10..20" : "Enter value"}
+            placeholder={condition.operator === "between" ? "最小值..最大值" : "输入值"}
             className="rounded-md border border-border bg-card px-2 py-2 text-xs text-foreground"
           />
         </label>
       </div>
 
-      {warning ? <div className="text-[11px] text-amber-300">Imported warning: {warning.reason}</div> : null}
-      {error ? <div className="text-[11px] text-red-300">{error}</div> : null}
+      {warning ? <div className="text-[11px] text-amber-300">导入提示：{translateScreenerMessage(warning.reason)}</div> : null}
+      {error ? <div className="text-[11px] text-red-300">{translateScreenerMessage(error)}</div> : null}
     </div>
   );
 }

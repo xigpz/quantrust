@@ -1,8 +1,8 @@
 /**
  * SettingsPanel - 设置面板
  */
-import { useState } from 'react';
-import { Settings, Server, Database, Wifi, Github, Info } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, Server, Database, Wifi, Github, Info, Key, Eye, EyeOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -10,6 +10,40 @@ import { toast } from 'sonner';
 export default function SettingsPanel() {
   const [apiUrl, setApiUrl] = useState(import.meta.env.VITE_API_BASE || 'http://localhost:8080');
   const [refreshInterval, setRefreshInterval] = useState(15);
+  const [minimaxKey, setMinimaxKey] = useState('');
+  const [minimaxKeySet, setMinimaxKeySet] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+
+  useEffect(() => {
+    fetch(`${apiUrl}/api/config`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setMinimaxKeySet(data.data.minimax_api_key_set);
+        }
+      })
+      .catch(() => {});
+  }, [apiUrl]);
+
+  const saveMinimaxKey = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minimax_api_key: minimaxKey }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMinimaxKeySet(data.data.minimax_api_key_set);
+        toast.success(minimaxKey ? 'API Key 已保存' : 'API Key 已清除');
+        setMinimaxKey('');
+      } else {
+        toast.error('保存失败');
+      }
+    } catch (e) {
+      toast.error('保存失败');
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -19,6 +53,44 @@ export default function SettingsPanel() {
       </div>
 
       <div className="p-4 space-y-6 overflow-auto flex-1">
+        {/* MiniMax API Key */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+            <Key className="w-3 h-3" /> AI 能力
+          </h3>
+          <div className="bg-card rounded-lg p-3 border border-border/50 space-y-2">
+            <label className="text-[10px] text-muted-foreground">MiniMax API Key</label>
+            <div className="flex gap-2">
+              <Input
+                type={showKey ? 'text' : 'password'}
+                value={minimaxKey}
+                onChange={(e) => setMinimaxKey(e.target.value)}
+                placeholder={minimaxKeySet ? '已设置 (请重新输入以修改)' : '输入 API Key'}
+                className="h-8 text-xs font-mono-data bg-background flex-1"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2"
+                onClick={() => setShowKey(!showKey)}
+              >
+                {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              {minimaxKeySet ? '✅ API Key 已配置，AI形态分析将使用AI分析' : '⚠️ 未配置API Key，将使用规则分析'}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-xs h-7"
+              onClick={saveMinimaxKey}
+            >
+              保存 API Key
+            </Button>
+          </div>
+        </div>
+
         {/* Connection */}
         <div className="space-y-3">
           <h3 className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">

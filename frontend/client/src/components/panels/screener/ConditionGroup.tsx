@@ -1,4 +1,12 @@
-import type { ImportedConditionWarning, ScreenerCatalogField, ScreenerCondition, ScreenerGroup, ScreenerLogic, ScreenerNode } from "@/lib/screener";
+import {
+  getScreenerLogicLabel,
+  type ImportedConditionWarning,
+  type ScreenerCatalogField,
+  type ScreenerCondition,
+  type ScreenerGroup,
+  type ScreenerLogic,
+  type ScreenerNode,
+} from "@/lib/screener";
 import ConditionCard from "./ConditionCard";
 
 interface ConditionGroupProps {
@@ -33,15 +41,15 @@ export default function ConditionGroup({
   return (
     <div className="space-y-3 rounded-2xl border border-border bg-card/70 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="text-sm font-semibold text-foreground">{isRoot ? "Rule Group" : "Nested Group"}</div>
+        <div className="text-sm font-semibold text-foreground">{isRoot ? "规则组" : "嵌套分组"}</div>
         <select
           data-testid={`group-operator-${group.id}`}
           value={group.operator}
           onChange={(event) => onOperatorChange(group.id, event.target.value as ScreenerLogic)}
           className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
         >
-          <option value="AND">AND</option>
-          <option value="OR">OR</option>
+          <option value="AND">{getScreenerLogicLabel("AND")}</option>
+          <option value="OR">{getScreenerLogicLabel("OR")}</option>
         </select>
         <button
           type="button"
@@ -49,14 +57,14 @@ export default function ConditionGroup({
           onClick={() => onAddCondition(group.id)}
           className="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-background"
         >
-          Add Condition
+          新增条件
         </button>
         <button
           type="button"
           onClick={() => onAddGroup(group.id)}
           className="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-background"
         >
-          Add Group
+          新增分组
         </button>
         {!isRoot ? (
           <button
@@ -65,7 +73,7 @@ export default function ConditionGroup({
             onClick={() => onRemoveNode(group.id)}
             className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            Remove Group
+            删除分组
           </button>
         ) : null}
       </div>
@@ -73,7 +81,7 @@ export default function ConditionGroup({
       <div className="space-y-3">
         {group.children.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
-            Add a condition or nested group to start building this rule set.
+            先添加条件或嵌套分组，开始搭建这套选股规则。
           </div>
         ) : null}
 

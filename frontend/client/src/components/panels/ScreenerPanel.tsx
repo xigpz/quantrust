@@ -8,6 +8,7 @@ import {
   importEastmoneyScreener,
   listScreenerTemplates,
   runScreenerDefinition,
+  translateScreenerMessage,
   updateScreenerTemplate,
   type ScreenerCatalogField,
   type ScreenerDefinition,
@@ -21,7 +22,7 @@ import ScreenerTemplateDrawer from "./screener/ScreenerTemplateDrawer";
 
 function createEmptyDefinition(): ScreenerDefinition {
   return {
-    name: "Visual Screener",
+    name: "可视化选股器",
     description: "",
     logic: {
       id: "root",
@@ -39,7 +40,7 @@ function parseValidationErrors(message: string): Record<string, string> {
     const parsed = JSON.parse(message) as Array<{ condition_id?: string; message?: string }>;
     return parsed.reduce<Record<string, string>>((accumulator, error) => {
       if (error.condition_id && error.message) {
-        accumulator[error.condition_id] = error.message;
+        accumulator[error.condition_id] = translateScreenerMessage(error.message);
       }
       return accumulator;
     }, {});
@@ -55,7 +56,7 @@ export default function ScreenerPanel() {
   const [totalCount, setTotalCount] = useState(0);
   const [templates, setTemplates] = useState<ScreenerTemplateRecord[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const [templateName, setTemplateName] = useState("Momentum Setup");
+  const [templateName, setTemplateName] = useState("动量策略");
   const [templateDescription, setTemplateDescription] = useState("");
   const [importUrl, setImportUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -69,7 +70,7 @@ export default function ScreenerPanel() {
     try {
       setTemplates(await listScreenerTemplates());
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load templates");
+      toast.error(translateScreenerMessage(error instanceof Error ? error.message : "Failed to load templates"));
     }
   };
 
@@ -84,7 +85,9 @@ export default function ScreenerPanel() {
         setCatalog(nextCatalog);
         setTemplates(nextTemplates);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to initialize screener workbench");
+        toast.error(
+          translateScreenerMessage(error instanceof Error ? error.message : "Failed to initialize screener workbench"),
+        );
       }
     })();
 
@@ -100,12 +103,16 @@ export default function ScreenerPanel() {
       const result = await runScreenerDefinition(definition, 80);
       setResults(result.rows);
       setTotalCount(result.total_count);
-      toast.success(`Matched ${result.total_count} symbols`);
+      toast.success(`匹配到 ${result.total_count} 只股票`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to run screener";
       const fieldErrors = parseValidationErrors(message);
       setValidationErrors(fieldErrors);
-      toast.error(Object.keys(fieldErrors).length > 0 ? "Fix invalid conditions before running again" : message);
+      toast.error(
+        Object.keys(fieldErrors).length > 0
+          ? "请先修正无效条件后再运行"
+          : translateScreenerMessage(message),
+      );
     } finally {
       setLoading(false);
     }
@@ -113,21 +120,26 @@ export default function ScreenerPanel() {
 
   const handleImport = async () => {
     if (!importUrl.trim()) {
-      toast.error("Paste an EastMoney screener URL first");
+      toast.error("请先粘贴东方财富选股链接");
       return;
     }
 
     setLoading(true);
     try {
       const imported = await importEastmoneyScreener(importUrl.trim());
-      setDefinition(imported);
-      setTemplateName(imported.name || "Imported EastMoney Screener");
-      setTemplateDescription(imported.description || "Imported from EastMoney");
+      const localizedImported = {
+        ...imported,
+        name: "东方财富导入选股",
+        description: "从东方财富链接导入",
+      };
+      setDefinition(localizedImported);
+      setTemplateName(localizedImported.name);
+      setTemplateDescription(localizedImported.description);
       setSelectedTemplateId(null);
       setValidationErrors({});
-      toast.success(`Imported ${imported.importMeta?.importedConditions ?? 0} conditions`);
+      toast.success(`已导入 ${imported.importMeta?.importedConditions ?? 0} 条条件`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Import failed");
+      toast.error(translateScreenerMessage(error instanceof Error ? error.message : "Import failed"));
     } finally {
       setLoading(false);
     }
@@ -154,9 +166,9 @@ export default function ScreenerPanel() {
       }
 
       await reloadTemplates();
-      toast.success("Template saved");
+      toast.success("模板已保存");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save template");
+      toast.error(translateScreenerMessage(error instanceof Error ? error.message : "Failed to save template"));
     } finally {
       setSaving(false);
     }
@@ -171,15 +183,15 @@ export default function ScreenerPanel() {
       <div className="rounded-[28px] border border-border bg-card/80 px-5 py-4 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <div className="text-lg font-semibold text-foreground">EastMoney Screener Workbench</div>
+            <div className="text-lg font-semibold text-foreground">东方财富选股工作台</div>
             <div className="mt-1 text-sm text-muted-foreground">
-              Compose nested rules, import compatible EastMoney links, and save reusable templates.
+              组合筛选条件、导入东方财富链接，并保存可复用的选股模板。
             </div>
           </div>
 
           <div className="flex flex-col gap-3 xl:w-[620px]">
             <label className="grid gap-2 text-xs text-muted-foreground">
-              Import EastMoney URL
+              导入东方财富链接
               <div className="flex gap-2">
                 <input
                   value={importUrl}
@@ -194,7 +206,7 @@ export default function ScreenerPanel() {
                   className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground"
                 >
                   <Download className="h-4 w-4" />
-                  Import
+                  导入
                 </button>
                 <button
                   type="button"
@@ -203,7 +215,7 @@ export default function ScreenerPanel() {
                   className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-950 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
                 >
                   {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  Run
+                  运行
                 </button>
                 <button
                   type="button"
@@ -212,7 +224,7 @@ export default function ScreenerPanel() {
                   className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground"
                 >
                   <Save className="h-4 w-4" />
-                  Save
+                  保存
                 </button>
               </div>
             </label>
@@ -241,9 +253,9 @@ export default function ScreenerPanel() {
           onAddToWatchlist={async (symbol, name) => {
             const response = await addToWatchlist({ symbol, name: name || symbol });
             if (response.success) {
-              toast.success(`${symbol} added to watchlist`);
+              toast.success(`${symbol} 已加入自选股`);
             } else {
-              toast.error(response.message);
+              toast.error(translateScreenerMessage(response.message));
             }
           }}
         />
