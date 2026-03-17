@@ -832,6 +832,57 @@ impl EastMoneyApi {
             timestamp: Utc::now(),
         })
     }
+
+    /// 获取个股所属概念板块（返回概念名称列表）
+    pub async fn get_stock_concepts(&self, symbol: &str) -> Result<Vec<String>> {
+        let (market, code) = parse_symbol(symbol);
+        let secid = format!("{}.{}", market, code);
+
+        // 使用东方财富的股票信息接口获取概念板块
+        let url = format!(
+            "https://push2delay.eastmoney.com/api/qt/stock/get?\
+            ut=fa5fd1943c7b386f172d6893dbbd1d0c&invt=2&fltt=2\
+            &fields=f57,f58,f84,f85,f116,f117,f127,f128,f140,f141,f142,f143,f144,f145\
+            &secid={}",
+            secid
+        );
+
+        let resp = self.fetch_json(&url).await?;
+        let data = resp.get("data");
+
+        if data.is_none() {
+            return Ok(Vec::new());
+        }
+
+        let data = data.unwrap();
+        let mut concepts = Vec::new();
+
+        // f127/f128: 行业板块名称/代码
+        if let Some(industry) = data.get("f127").and_then(|v| v.as_str()) {
+            if !industry.is_empty() {
+                concepts.push(industry.to_string());
+            }
+        }
+
+        // f84/f85: 概念板块名称/代码（可能有多个，用逗号分隔）
+        if let Some(concept_str) = data.get("f84").and_then(|v| v.as_str()) {
+            for concept in concept_str.split(',') {
+                let concept = concept.trim();
+                if !concept.is_empty() && !concepts.contains(&concept.to_string()) {
+                    concepts.push(concept.to_string());
+                }
+            }
+        }
+
+        // f141/f142: 地区板块名称/代码
+        if let Some(region) = data.get("f141").and_then(|v| v.as_str()) {
+            if !region.is_empty() && !concepts.contains(&region.to_string()) {
+                concepts.push(region.to_string());
+            }
+        }
+
+        Ok(concepts)
+    }
 }
 
 /// 解析股票代码 -> (market_id, code)

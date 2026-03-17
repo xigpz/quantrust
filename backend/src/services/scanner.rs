@@ -81,7 +81,7 @@ impl MarketScanner {
             quotes.dedup_by(|a, b| a.symbol == b.symbol);
         }
 
-        // 5. 获取板块数据（需要在计算热点股票之前获取）
+        // 5. 获取板块数据
         let sectors = match self.provider.get_sectors().await {
             Ok(s) => {
                 *self.cache.sectors.write().await = s.clone();
@@ -93,52 +93,23 @@ impl MarketScanner {
             }
         };
 
-        // 获取概念板块（用于更精确的个股板块归属）
-        let concept_sectors = match self.provider.get_concept_sectors().await {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!("Failed to fetch concept sectors: {}", e);
-                Vec::new()
-            }
-        };
-
-        // 构建股票到板块的映射（获取板块的个股）
-        let mut stock_sector_map: HashMap<String, (String, f64)> = HashMap::new();
-
-        // 获取所有行业板块的个股（提高覆盖率）
-        for sector in &sectors {
-            if let Ok(stocks) = self.provider.get_sector_stocks(&sector.code).await {
-                for stock in stocks.iter().take(30) {
-                    if !stock.name.is_empty() {
-                        stock_sector_map.entry(stock.name.clone()).or_insert((
-                            sector.name.clone(),
-                            sector.change_pct,
-                        ));
-                    }
-                }
-            }
-        }
-
-        // 获取概念板块的个股（概念板块覆盖行业板块）
-        for sector in &concept_sectors {
-            if let Ok(stocks) = self.provider.get_sector_stocks(&sector.code).await {
-                for stock in stocks.iter().take(20) {
-                    if !stock.name.is_empty() {
-                        // 概念板块会覆盖行业板块的归属
-                        stock_sector_map.insert(
-                            stock.name.clone(),
-                            (sector.name.clone(), sector.change_pct),
-                        );
-                    }
-                }
-            }
-        }
-
-        tracing::info!("Built stock-sector map with {} entries", stock_sector_map.len());
-
         if !quotes.is_empty() {
-            // 2. 计算热点股票（传入板块信息）
-            let hot_stocks = self.hot_ranker.rank(&quotes, &stock_sector_map, 200);
+            // 2. 计算热点股票（暂时不传板块信息，后续单独获取）
+            let mut hot_stocks = self.hot_ranker.rank(&quotes, 200);
+
+            // 3. 为热点股票获取所属板块（直接查询每只股票的概念）
+            for stock in hot_stocks.iter_mut().take(50) {
+                if let Ok(concepts) = self.provider.get_stock_concepts(&stock.symbol).await {
+                    if !concepts.is_empty() {
+                        stock.sector_name = concepts[0].clone();
+                        // 尝试获取概念板块的涨跌幅
+                        if concepts.len() > 1 {
+                            stock.sector_name = concepts.join(", ");
+                        }
+                    }
+                }
+            }
+
             *self.cache.hot_stocks.write().await = hot_stocks;
 
             // 3. 检测异动

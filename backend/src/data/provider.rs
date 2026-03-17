@@ -74,4 +74,8 @@ impl DataProvider {
     pub async fn get_intraday(&self, symbol: &str, range: &str) -> Result<IntradaySeries> {
         self.api.get_intraday(symbol, range).await
     }
+
+    pub async fn get_stock_concepts(&self, symbol: &str) -> Result<Vec<String>> {
+        self.api.get_stock_concepts(symbol).await
+    }
 }

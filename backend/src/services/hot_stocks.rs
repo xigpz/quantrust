@@ -1,6 +1,5 @@
 use crate::models::*;
 use chrono::Utc;
-use std::collections::HashMap;
 
 /// 热点股票排名引擎
 /// 综合成交额、换手率、涨跌幅、振幅等多维度指标计算热度评分
@@ -12,19 +11,12 @@ impl HotStockRanker {
     }
 
     /// 从行情数据中计算热点股票排名
-    /// stock_sector_map: 股票名称到板块信息的映射
-    pub fn rank(&self, quotes: &[StockQuote], stock_sector_map: &HashMap<String, (String, f64)>, top_n: usize) -> Vec<HotStock> {
+    pub fn rank(&self, quotes: &[StockQuote], top_n: usize) -> Vec<HotStock> {
         let mut hot_stocks: Vec<HotStock> = quotes
             .iter()
             .filter(|q| q.price > 0.0 && q.turnover > 0.0)
             .map(|q| {
                 let (score, reason) = self.calculate_hot_score(q);
-
-                // 尝试获取该股票对应的板块信息
-                let (sector_name, sector_change) = stock_sector_map
-                    .get(&q.name)
-                    .map(|(n, c)| (n.as_str(), *c))
-                    .unwrap_or(("未知板块", 0.0));
 
                 HotStock {
                     symbol: q.symbol.clone(),
@@ -36,8 +28,8 @@ impl HotStockRanker {
                     turnover_rate: q.turnover_rate,
                     hot_score: score,
                     hot_reason: reason,
-                    sector_name: sector_name.to_string(),
-                    sector_change_pct: sector_change,
+                    sector_name: "未知板块".to_string(),
+                    sector_change_pct: 0.0,
                     timestamp: Utc::now(),
                 }
             })
