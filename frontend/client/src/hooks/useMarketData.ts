@@ -10,6 +10,32 @@ import {
 // - When VITE_API_BASE is empty, use relative path (works with Vite proxy)
 export const API_BASE = import.meta.env.VITE_API_BASE || '';
 
+// Refresh interval hook with localStorage persistence
+const STORAGE_KEY = 'quantrust_refresh_interval';
+
+// Global refresh interval (in seconds)
+let globalRefreshInterval = 15;
+
+export function useRefreshInterval() {
+  const [refreshInterval, setRefreshInterval] = useState<number>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    globalRefreshInterval = saved ? parseInt(saved, 10) : 15;
+    return globalRefreshInterval;
+  });
+
+  useEffect(() => {
+    globalRefreshInterval = refreshInterval;
+    localStorage.setItem(STORAGE_KEY, refreshInterval.toString());
+  }, [refreshInterval]);
+
+  return { refreshInterval, setRefreshInterval };
+}
+
+// Get global refresh interval in milliseconds (for use in hooks)
+export function getRefreshIntervalMs(): number {
+  return globalRefreshInterval * 1000;
+}
+
 // Track if backend is available
 let backendAvailable: boolean | null = null;
 
@@ -104,7 +130,7 @@ export interface MarketOverview {
 }
 
 export function useMarketOverview() {
-  return useApi<MarketOverview>('/api/market/overview', generateMockOverview, 3000);
+  return useApi<MarketQuote>('/api/market/overview', generateMockOverview, getRefreshIntervalMs());
 }
 
 // Stock Quote
@@ -129,7 +155,7 @@ export interface StockQuote {
 }
 
 export function useQuotes(page = 1, pageSize = 50) {
-  return useApi<StockQuote[]>(`/api/quotes?page=${page}&page_size=${pageSize}`, generateMockQuotes, 5000);
+  return useApi<StockQuote[]>(`/api/quotes?page=${page}&page_size=${pageSize}`, generateMockQuotes, getRefreshIntervalMs());
 }
 
 // Hot Stocks
@@ -149,11 +175,11 @@ export interface HotStock {
 }
 
 export function useHotStocks() {
-  return useApi<HotStock[]>('/api/hot-stocks?page=1&page_size=50', generateMockHotStocks, 5000);
+  return useApi<HotStock[]>('/api/hot-stocks?page=1&page_size=50', generateMockHotStocks, getRefreshIntervalMs());
 }
 
 export function useHotStocksPaged(page = 1, pageSize = 50) {
-  const interval = page === 1 ? 5000 : undefined;
+  const interval = page === 1 ? getRefreshIntervalMs() : undefined;
   return useApi<HotStock[]>(`/api/hot-stocks?page=${page}&page_size=${pageSize}`, generateMockHotStocks, interval);
 }
 
@@ -172,7 +198,7 @@ export interface AnomalyStock {
 }
 
 export function useAnomalies() {
-  return useApi<AnomalyStock[]>('/api/anomalies', generateMockAnomalies, 5000);
+  return useApi<AnomalyStock[]>('/api/anomalies', generateMockAnomalies, getRefreshIntervalMs());
 }
 
 // Sectors
@@ -189,7 +215,7 @@ export interface SectorInfo {
 }
 
 export function useSectors() {
-  return useApi<SectorInfo[]>('/api/sectors', generateMockSectors, 30000);
+  return useApi<SectorInfo[]>('/api/sectors', generateMockSectors, getRefreshIntervalMs());
 }
 
 // Money Flow
@@ -205,7 +231,7 @@ export interface MoneyFlow {
 }
 
 export function useMoneyFlow() {
-  return useApi<MoneyFlow[]>('/api/money-flow', generateMockMoneyFlow, 30000);
+  return useApi<MoneyFlow[]>('/api/money-flow', generateMockMoneyFlow, getRefreshIntervalMs());
 }
 
 // Candles
@@ -304,12 +330,12 @@ export function useSearch(query: string) {
 
 // Limit Up
 export function useLimitUp() {
-  return useApi<StockQuote[]>('/api/limit-up', generateMockLimitUp, 30000);
+  return useApi<StockQuote[]>('/api/limit-up', generateMockLimitUp, getRefreshIntervalMs());
 }
 
 // Watchlist
 export function useWatchlist() {
-  return useApi<any[]>('/api/watchlist', undefined, 30000);
+  return useApi<any[]>('/api/watchlist', undefined, getRefreshIntervalMs());
 }
 
 export async function addToWatchlist(params: { symbol: string; name: string; group_name?: string }): Promise<ApiResponse<string>> {

@@ -4,9 +4,12 @@
  */
 import { useState, createContext, useContext } from 'react';
 import MarketBar from '@/components/MarketBar';
+import { useRefreshInterval } from '@/hooks/useMarketData';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Sidebar, { type TabId } from '@/components/Sidebar';
 import OverviewPanel from '@/components/panels/OverviewPanel';
 import HotStocksPanel from '@/components/panels/HotStocksPanel';
+import AIPatternPanel from '@/components/panels/AIPatternPanel';
 import AnomalyPanel from '@/components/panels/AnomalyPanel';
 import MomentumPanel from '@/components/panels/MomentumPanel';
 import RiskPanel from '@/components/panels/RiskPanel';
@@ -17,7 +20,6 @@ import SectorsPanel from '@/components/panels/SectorsPanel';
 import MoneyFlowPanel from '@/components/panels/MoneyFlowPanel';
 import LimitUpPanel from '@/components/panels/LimitUpPanel';
 import WatchlistPanel from '@/components/panels/WatchlistPanel';
-import WatchlistAnalysisPanel from '@/components/panels/WatchlistAnalysisPanel';
 import BacktestPanel from '@/components/panels/BacktestPanel';
 import OptimizationPanel from '@/components/panels/OptimizationPanel';
 import StrategyVersionsPanel from '@/components/panels/StrategyVersionsPanel';
@@ -28,19 +30,20 @@ import RecommendPanel from '@/components/panels/RecommendPanel';
 import VirtualTradingPanel from '@/components/panels/VirtualTradingPanel';
 import StrategyPanel from '@/components/panels/StrategyPanel';
 import NewsPanel from '@/components/panels/NewsPanel';
-import WatchlistAnalysisPanel from '@/components/panels/WatchlistAnalysisPanel';
 import SimTrading from './SimTrading';
 import PortfolioPanel from '@/components/panels/PortfolioPanel';
 import SettingsPanel from '@/components/panels/SettingsPanel';
 import StockDetailModal from '@/components/StockDetailModal';
 import MobileNav from '@/components/MobileNav';
+import SectorAnomalyAlert from '@/components/SectorAnomalyAlert';
 import { useWebSocket } from '@/hooks/useMarketData';
 
 // Context: 让子面板可以触发股票详情弹窗
 interface StockClickCtx {
   openStock: (symbol: string, name?: string) => void;
+  switchTab: (tab: TabId) => void;
 }
-export const StockClickContext = createContext<StockClickCtx>({ openStock: () => {} });
+export const StockClickContext = createContext<StockClickCtx>({ openStock: () => {}, switchTab: () => {} });
 export function useStockClick() { return useContext(StockClickContext); }
 
 const panelMap: Record<TabId, React.ComponentType> = {
@@ -48,7 +51,6 @@ const panelMap: Record<TabId, React.ComponentType> = {
   hot: HotStocksPanel,
   anomaly: AnomalyPanel,
   news: NewsPanel,
-  watchlist2: WatchlistAnalysisPanel,
   momentum: MomentumPanel,
   risk: RiskPanel,
   dragon: DragonTigerPanel,
@@ -70,11 +72,13 @@ const panelMap: Record<TabId, React.ComponentType> = {
   leaderboard: LeaderboardPanel,
   visual: VisualStrategyEditor,
   market: StrategyMarketPanel,
+  aipattern: AIPatternPanel,
 };
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const { connected, isDemo } = useWebSocket();
+  const { refreshInterval, setRefreshInterval } = useRefreshInterval();
 
   // 股票详情弹窗状态
   const [selectedStock, setSelectedStock] = useState<{ symbol: string; name?: string } | null>(null);
@@ -82,7 +86,7 @@ export default function Dashboard() {
   const ActivePanel = panelMap[activeTab];
 
   return (
-    <StockClickContext.Provider value={{ openStock: (symbol, name) => setSelectedStock({ symbol, name }) }}>
+    <StockClickContext.Provider value={{ openStock: (symbol, name) => setSelectedStock({ symbol, name }), switchTab: setActiveTab }}>
       <div className="h-screen flex flex-col bg-background overflow-hidden">
         {/* Top Market Bar - 移动端隐藏 */}
         <MarketBar wsConnected={connected} isDemo={isDemo} className="hidden md:flex" />
@@ -116,7 +120,21 @@ export default function Dashboard() {
             {connected ? '数据连接正常' : isDemo ? 'Demo 模式 — 启动后端后自动切换实时数据' : '等待连接...'}
           </span>
           <span>数据源: 东方财富</span>
-          <span>刷新间隔: 15s</span>
+          <div className="flex items-center gap-1">
+            <span>刷新:</span>
+            <Select value={refreshInterval.toString()} onValueChange={(v) => setRefreshInterval(v === 'custom' ? 15 : parseInt(v, 10))}>
+              <SelectTrigger className="h-5 w-16 text-[10px] py-0 px-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5秒</SelectItem>
+                <SelectItem value="10">10秒</SelectItem>
+                <SelectItem value="15">15秒</SelectItem>
+                <SelectItem value="30">30秒</SelectItem>
+                <SelectItem value="60">60秒</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex-1" />
           <span>QuantRust v0.1.0</span>
         </footer>
@@ -128,6 +146,9 @@ export default function Dashboard() {
         name={selectedStock?.name}
         onClose={() => setSelectedStock(null)}
       />
+
+      {/* 板块异动提醒 */}
+      <SectorAnomalyAlert />
     </StockClickContext.Provider>
   );
 }
