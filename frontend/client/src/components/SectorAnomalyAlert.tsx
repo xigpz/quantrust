@@ -27,8 +27,8 @@ export default function SectorAnomalyAlert({ onClose }: SectorAnomalyAlertProps)
   const [isMinimized, setIsMinimized] = useState(false);
   const prevSectorsRef = useRef<Map<string, number>>(new Map());
 
-  // 拖拽状态 - 默认显示在顶部行情栏"涨"字的左边
-  const [position, setPosition] = useState({ x: 480, y: 56 });
+  // 拖拽状态 - 默认显示在右下角
+  const [position, setPosition] = useState({ x: 20, y: 20 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const positionStartRef = useRef({ x: 0, y: 0 });

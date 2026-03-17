@@ -13,9 +13,16 @@ use crate::services::risk::{RiskManager, RiskConfig, RiskReport};
 use crate::services::financial::{DragonTigerService, DragonTigerData, FinancialService, FinancialFilter, FinancialData};
 use crate::services::news_analyzer::{NewsAnalyzer, AnomalyPrediction, Sentiment};
 use crate::services::screener::{ScreenerExecutionResult, ScreenerService};
+use crate::services::ai_pattern::{AIPatternService, PatternResult, ScreenParams};
 use crate::models::*;
 use crate::db::DbPool;
 use crate::sim::SimState;
+
+/// 应用运行时配置
+#[derive(Clone, Default)]
+pub struct AppConfig {
+    pub minimax_api_key: String,
+}
 
 /// 应用状态
 #[derive(Clone)]
@@ -24,6 +31,7 @@ pub struct AppState {
     pub provider: Arc<DataProvider>,
     pub db: DbPool,
     pub sim_state: Arc<SimState>,
+    pub config: Arc<std::sync::RwLock<AppConfig>>,
 }
 
 /// 创建路由
@@ -35,6 +43,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/quotes", get(get_quotes))
         .route("/api/quotes/{symbol}", get(get_stock_detail))
         .route("/api/candles/{symbol}", get(get_candles))
+        .route("/api/intraday/{symbol}", get(get_intraday))
         // 热点股票
         .route("/api/hot-stocks", get(get_hot_stocks))
         // 异动检测
@@ -46,6 +55,12 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/money-flow", get(get_money_flow))
         // 涨停板
         .route("/api/limit-up", get(get_limit_up))
+        // 新闻公告
+        .route("/api/notices/{symbol}", get(get_stock_notices))
+        .route("/api/notice/{art_code}", get(get_notice_detail))
+        // 财经新闻
+        .route("/api/news/{symbol}", get(get_stock_news))
+        .route("/api/news/detail/{news_id}", get(get_news_detail))
         // 自选股
         .route("/api/watchlist", get(get_watchlist))
         .route("/api/watchlist", post(add_watchlist))
@@ -87,6 +102,14 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/search", get(search_stocks))
         // 异动预测
         .route("/api/anomaly/predictions", get(get_anomaly_predictions))
+        // AI形态分析
+        .route("/api/ai/analyze-pattern", post(analyze_pattern))
+        .route("/api/ai/screen-patterns", post(screen_patterns))
+        // 每日推荐
+        .route("/api/recommend", get(get_recommend))
+        // 配置管理
+        .route("/api/config", get(get_config))
+        .route("/api/config", post(update_config))
         .with_state(state)
 }
 
@@ -195,12 +218,34 @@ async fn get_candles(
 ) -> Json<ApiResponse<Vec<Candle>>> {
     let period = params.period.unwrap_or_else(|| "1d".to_string());
     let count = params.count.unwrap_or(120);
-    
+
     match state.provider.get_candles(&symbol, &period, count).await {
         Ok(candles) => ok_response(candles),
         Err(e) => {
             tracing::warn!("Failed to get candles for {}: {}", symbol, e);
             ok_response(vec![])
+        }
+    }
+}
+
+/// 获取分时数据
+#[derive(Deserialize)]
+pub struct IntradayParams {
+    pub range: Option<String>,
+}
+
+async fn get_intraday(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    Query(params): Query<IntradayParams>,
+) -> Json<ApiResponse<crate::models::intraday::IntradaySeries>> {
+    let range = params.range.unwrap_or_else(|| "1d".to_string());
+
+    match state.provider.get_intraday(&symbol, &range).await {
+        Ok(data) => ok_response(data),
+        Err(e) => {
+            tracing::warn!("Failed to get intraday for {}: {}", symbol, e);
+            err_response(&format!("获取分时数据失败: {}", e))
         }
     }
 }
@@ -266,24 +311,106 @@ async fn get_limit_up(
     ok_response(stocks)
 }
 
+/// 获取个股新闻公告列表
+async fn get_stock_notices(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Json<ApiResponse<StockNoticesResponse>> {
+    let page_index: u32 = params.get("page")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let page_size: u32 = params.get("page_size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+
+    match state.provider.get_stock_notices(&symbol, page_index, page_size).await {
+        Ok(notices) => ok_response(notices),
+        Err(e) => err_response(&e.to_string()),
+    }
+}
+
+/// 获取公告详情
+async fn get_notice_detail(
+    State(state): State<AppState>,
+    Path(art_code): Path<String>,
+) -> Json<ApiResponse<StockNoticeDetail>> {
+    match state.provider.get_notice_detail(&art_code).await {
+        Ok(detail) => ok_response(detail),
+        Err(e) => err_response(&e.to_string()),
+    }
+}
+
+/// 获取财经新闻列表
+async fn get_stock_news(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Json<ApiResponse<StockNewsResponse>> {
+    let page_index: u32 = params.get("page")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let page_size: u32 = params.get("page_size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20);
+
+    match state.provider.get_stock_news(&symbol, page_index, page_size).await {
+        Ok(news) => ok_response(news),
+        Err(e) => err_response(&e.to_string()),
+    }
+}
+
+/// 获取新闻详情
+async fn get_news_detail(
+    State(state): State<AppState>,
+    Path(news_id): Path<String>,
+) -> Json<ApiResponse<StockNews>> {
+    match state.provider.get_news_detail(&news_id).await {
+        Ok(detail) => ok_response(detail),
+        Err(e) => err_response(&e.to_string()),
+    }
+}
+
 /// 获取自选股
 async fn get_watchlist(
     State(state): State<AppState>,
 ) -> Json<ApiResponse<Vec<WatchlistItem>>> {
-    let db = state.db.lock().unwrap();
-    let mut stmt = db.prepare(
-        "SELECT id, symbol, name, group_name, added_at FROM watchlist ORDER BY added_at DESC"
-    ).unwrap();
-    
-    let items: Vec<WatchlistItem> = stmt.query_map([], |row| {
-        Ok(WatchlistItem {
-            id: row.get(0)?,
-            symbol: row.get(1)?,
-            name: row.get(2)?,
-            group_name: row.get(3)?,
-            added_at: row.get(4)?,
-        })
-    }).unwrap().filter_map(|r| r.ok()).collect();
+    // 使用 tokio::task::spawn_blocking 在阻塞线程中执行数据库查询
+    let symbols: Vec<(String, String, String, String, String)> = tokio::task::spawn_blocking(move || {
+        let db = state.db.lock().unwrap();
+        let mut stmt = db.prepare(
+            "SELECT id, symbol, name, group_name, added_at FROM watchlist ORDER BY added_at DESC"
+        ).unwrap();
+        stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }).await.unwrap();
+
+    // 获取实时行情和所属板块
+    let provider = state.provider.clone();
+    let mut items = Vec::with_capacity(symbols.len());
+
+    for (id, symbol, name, group_name, added_at) in symbols {
+        let quote = provider.get_stock_detail(&symbol).await;
+        let (price, change, change_pct, volume, turnover, turnover_rate) = match quote {
+            Ok(q) => (Some(q.price), Some(q.change), Some(q.change_pct), Some(q.volume), Some(q.turnover), Some(q.turnover_rate)),
+            Err(_) => (None, None, None, None, None, None),
+        };
+
+        // 获取所属板块
+        let sector_name = match provider.get_stock_concepts(&symbol).await {
+            Ok(concepts) if !concepts.is_empty() => Some(concepts[0].clone()),
+            _ => None,
+        };
+
+        items.push(WatchlistItem { id, symbol, name, group_name, added_at, price, change, change_pct, volume, turnover, turnover_rate, sector_name });
+    }
 
     ok_response(items)
 }
@@ -295,6 +422,15 @@ pub struct WatchlistItem {
     pub name: String,
     pub group_name: String,
     pub added_at: String,
+    // 实时行情数据
+    pub price: Option<f64>,
+    pub change: Option<f64>,
+    pub change_pct: Option<f64>,
+    pub volume: Option<f64>,
+    pub turnover: Option<f64>,
+    pub turnover_rate: Option<f64>,
+    // 所属板块
+    pub sector_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -360,6 +496,115 @@ async fn search_stocks(
     ok_response(results)
 }
 
+/// 每日推荐股票
+#[derive(Serialize)]
+pub struct StockRecommend {
+    pub symbol: String,
+    pub name: String,
+    pub price: f64,
+    pub change_pct: f64,
+    pub score: f64,
+    pub level: String,
+    pub reasons: Vec<String>,
+    pub risk_level: String,
+    pub target_price: Option<f64>,
+    pub stop_loss: Option<f64>,
+}
+
+async fn get_recommend(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<Vec<StockRecommend>>> {
+    let quotes = state.cache.all_quotes.read().await;
+
+    // 从热点股票中筛选推荐
+    let mut recommends: Vec<StockRecommend> = quotes
+        .iter()
+        .filter(|q| q.price > 0.0 && q.turnover > 0.0)
+        .filter(|q| q.change_pct > 0.0)  // 只推荐上涨的
+        .take(20)
+        .map(|q| {
+            let (score, level, reasons, risk_level) = calculate_recommend(q);
+
+            StockRecommend {
+                symbol: q.symbol.clone(),
+                name: q.name.clone(),
+                price: q.price,
+                change_pct: q.change_pct,
+                score,
+                level,
+                reasons,
+                risk_level,
+                target_price: Some(q.price * 1.15),  // 目标价+15%
+                stop_loss: Some(q.price * 0.95),     // 止损-5%
+            }
+        })
+        .collect();
+
+    // 按评分排序
+    recommends.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+    ok_response(recommends)
+}
+
+fn calculate_recommend(quote: &StockQuote) -> (f64, String, Vec<String>, String) {
+    let mut score = 0.0;
+    let mut reasons = Vec::new();
+    let mut risk_level = "中".to_string();
+
+    // 涨幅得分
+    if quote.change_pct >= 5.0 && quote.change_pct <= 9.0 {
+        score += 30.0;
+        reasons.push("强势涨停".to_string());
+    } else if quote.change_pct >= 3.0 {
+        score += 20.0;
+        reasons.push("涨幅较好".to_string());
+    } else if quote.change_pct > 0.0 {
+        score += 10.0;
+    }
+
+    // 成交额得分
+    if quote.turnover > 1e9 {
+        score += 25.0;
+        reasons.push("成交活跃".to_string());
+    } else if quote.turnover > 5e8 {
+        score += 15.0;
+    }
+
+    // 换手率得分
+    if quote.turnover_rate > 10.0 {
+        score += 20.0;
+        reasons.push("换手率高".to_string());
+    } else if quote.turnover_rate > 5.0 {
+        score += 10.0;
+    }
+
+    // 振幅得分
+    if quote.amplitude > 8.0 {
+        score += 15.0;
+        reasons.push("波动大".to_string());
+    }
+
+    // 风险评估
+    if quote.change_pct >= 9.0 {
+        risk_level = "高".to_string();
+        reasons.push("注意风险".to_string());
+    } else if quote.turnover_rate > 20.0 {
+        risk_level = "中高".to_string();
+    }
+
+    let level = if score >= 80.0 {
+        "强烈推荐".to_string()
+    } else if score >= 60.0 {
+        "推荐".to_string()
+    } else if score >= 40.0 {
+        "观望".to_string()
+    } else {
+        "谨慎".to_string()
+    };
+
+    (score, level, reasons, risk_level)
+}
+
 /// 获取异动预测
 async fn get_anomaly_predictions(
     State(state): State<AppState>,
@@ -368,7 +613,12 @@ async fn get_anomaly_predictions(
     let mut predictions = Vec::new();
     
     // 基于市场数据预测
+    // 过滤掉无效数据（非交易时段 turnover=0）
     for quote in quotes.iter() {
+        // 跳过无效行情数据
+        if quote.price <= 0.0 || quote.turnover <= 0.0 {
+            continue;
+        }
         let pt: String;
         let urgency: String;
         let reason: String;
@@ -384,10 +634,10 @@ async fn get_anomaly_predictions(
             urgency = "高".to_string();
             reason = format!("跌幅{}%，注意风险", quote.change_pct);
             label = "利空".to_string();
-        } else if quote.turnover > 15.0 && quote.change_pct.abs() > 3.0 {
+        } else if quote.turnover_rate > 15.0 && quote.change_pct.abs() > 3.0 {
             pt = "放量异动".to_string();
             urgency = "中".to_string();
-            reason = format!("换手率{}%，成交量异常放大", quote.turnover);
+            reason = format!("换手率{:.1}%，成交量异常放大", quote.turnover_rate);
             label = if quote.change_pct > 0.0 { "利好".to_string() } else { "利空".to_string() };
         } else {
             continue;
@@ -410,6 +660,165 @@ async fn get_anomaly_predictions(
     
     predictions.truncate(20);
     ok_response(predictions)
+}
+
+/// 分析单只股票形态
+#[derive(Deserialize)]
+pub struct AnalyzePatternRequest {
+    pub symbol: String,
+    pub name: Option<String>,
+    pub days: Option<usize>,
+}
+
+async fn analyze_pattern(
+    State(state): State<AppState>,
+    Json(req): Json<AnalyzePatternRequest>,
+) -> Json<ApiResponse<PatternResult>> {
+    let days = req.days.unwrap_or(120);
+
+    // 获取运行时配置的 API Key
+    let api_key = {
+        let config = state.config.read().unwrap();
+        config.minimax_api_key.clone()
+    };
+
+    // 获取K线数据
+    match state.provider.get_candles(&req.symbol, "daily", days as u32).await {
+        Ok(candles) => {
+            if candles.is_empty() {
+                return err_response("无法获取K线数据");
+            }
+
+            let name = req.name.unwrap_or(req.symbol.clone());
+            let ai_service = AIPatternService::new_with_key(&api_key);
+            let result = ai_service.analyze_pattern(&req.symbol, &name, &candles).await;
+
+            ok_response(result)
+        }
+        Err(e) => err_response(&format!("获取数据失败: {}", e)),
+    }
+}
+
+/// 获取配置
+#[derive(Serialize)]
+pub struct ConfigResponse {
+    pub minimax_api_key_set: bool,
+}
+
+async fn get_config(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<ConfigResponse>> {
+    let config = state.config.read().unwrap();
+    ok_response(ConfigResponse {
+        minimax_api_key_set: !config.minimax_api_key.is_empty(),
+    })
+}
+
+/// 更新配置
+#[derive(Deserialize)]
+pub struct UpdateConfigRequest {
+    pub minimax_api_key: Option<String>,
+}
+
+async fn update_config(
+    State(state): State<AppState>,
+    Json(req): Json<UpdateConfigRequest>,
+) -> Json<ApiResponse<ConfigResponse>> {
+    let mut config = state.config.write().unwrap();
+
+    if let Some(key) = req.minimax_api_key {
+        config.minimax_api_key = key;
+    }
+
+    ok_response(ConfigResponse {
+        minimax_api_key_set: !config.minimax_api_key.is_empty(),
+    })
+}
+
+/// 筛选形态股票
+#[derive(Deserialize)]
+pub struct ScreenPatternsRequest {
+    pub max_amplitude: Option<f64>,
+    pub days: Option<usize>,
+    pub min_consolidation_prob: Option<f64>,
+    pub trend: Option<String>,
+    pub limit: Option<usize>,
+}
+
+async fn screen_patterns(
+    State(state): State<AppState>,
+    Json(req): Json<ScreenPatternsRequest>,
+) -> Json<ApiResponse<Vec<PatternResult>>> {
+    let max_amplitude = req.max_amplitude.unwrap_or(25.0);
+    let days = req.days.unwrap_or(120);
+    let limit = req.limit.unwrap_or(50);
+
+    // 获取运行时配置的 API Key
+    let api_key = {
+        let config = state.config.read().unwrap();
+        config.minimax_api_key.clone()
+    };
+
+    // 获取所有股票行情
+    let quotes = state.cache.all_quotes.read().await;
+    let mut candidates: Vec<(String, String)> = Vec::new();
+
+    // 过滤掉无效数据
+    for quote in quotes.iter() {
+        if quote.price > 0.0 && quote.turnover > 0.0 {
+            candidates.push((quote.symbol.clone(), quote.name.clone()));
+        }
+    }
+    drop(quotes);
+
+    let ai_service = AIPatternService::new_with_key(&api_key);
+    let mut results: Vec<PatternResult> = Vec::new();
+
+    // 对候选股票进行分析
+    for (symbol, name) in candidates.iter().take(200) {  // 限制分析数量
+        match state.provider.get_candles(symbol, "daily", days as u32).await {
+            Ok(candles) => {
+                if candles.len() < 20 {
+                    continue;
+                }
+
+                // 先用规则筛选横盘股票
+                if !ai_service.screen_consolidation(&candles, max_amplitude, days) {
+                    continue;
+                }
+
+                // 获取AI分析结果
+                let result = ai_service.analyze_pattern(symbol, &name, &candles).await;
+
+                // 应用额外筛选条件
+                if let Some(min_prob) = req.min_consolidation_prob {
+                    if result.consolidation_prob < min_prob {
+                        continue;
+                    }
+                }
+
+                if let Some(ref trend_filter) = req.trend {
+                    let trend_str = match result.trend {
+                        crate::services::ai_pattern::TrendType::Bullish | crate::services::ai_pattern::TrendType::Strong => "bullish",
+                        crate::services::ai_pattern::TrendType::Bearish | crate::services::ai_pattern::TrendType::Weak => "bearish",
+                        crate::services::ai_pattern::TrendType::Sideways => "sideways",
+                    };
+                    if trend_filter != trend_str {
+                        continue;
+                    }
+                }
+
+                results.push(result);
+
+                if results.len() >= limit {
+                    break;
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+
+    ok_response(results)
 }
 
 /// 回测请求

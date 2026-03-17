@@ -2,13 +2,30 @@
  * WatchlistPanel - 自选股面板
  */
 import { useState } from 'react';
-import { useWatchlist, removeFromWatchlist } from '@/hooks/useMarketData';
+import { useWatchlist, removeFromWatchlist, formatPrice, formatPercent, formatNumber, getChangeColor } from '@/hooks/useMarketData';
+import { useStockClick } from '@/pages/Dashboard';
 import { Star, RefreshCw, Plus, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 
+interface WatchlistItem {
+  id: string;
+  symbol: string;
+  name: string;
+  group_name: string;
+  added_at: string;
+  price?: number;
+  change?: number;
+  change_pct?: number;
+  volume?: number;
+  turnover?: number;
+  turnover_rate?: number;
+  sector_name?: string;
+}
+
 export default function WatchlistPanel() {
   const { data: watchlist, loading, refetch } = useWatchlist();
+  const { openStock } = useStockClick();
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   return (
@@ -36,36 +53,62 @@ export default function WatchlistPanel() {
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-card z-10">
               <tr className="text-muted-foreground border-b border-border">
-                <th className="text-left py-2 px-3 font-medium">股票</th>
-                <th className="text-right py-2 px-2 font-medium">代码</th>
-                <th className="text-right py-2 px-2 font-medium">分组</th>
-                <th className="w-10 py-2 px-2 font-medium" />
+                <th className="text-left py-2 px-2 font-medium">股票</th>
+                <th className="text-left py-2 px-2 font-medium">板块</th>
+                <th className="text-right py-2 px-2 font-medium">现价</th>
+                <th className="text-right py-2 px-2 font-medium">涨跌幅</th>
+                <th className="text-right py-2 px-2 font-medium">换手率</th>
+                <th className="text-right py-2 px-2 font-medium">成交额</th>
+                <th className="w-10 py-2 px-1 font-medium" />
               </tr>
             </thead>
             <tbody>
-              {watchlist.map((item: any) => (
-                <tr key={item.id} className="border-b border-border/50 hover:bg-accent/50 transition-colors">
-                  <td className="py-1.5 px-3 font-medium">{item.name}</td>
-                  <td className="text-right py-1.5 px-2 font-mono-data text-muted-foreground">{item.symbol}</td>
-                  <td className="text-right py-1.5 px-2 text-muted-foreground">{item.group_name}</td>
-                  <td className="text-right py-1.5 px-2">
+              {watchlist.map((item: WatchlistItem) => (
+                <tr
+                  key={item.id}
+                  className="border-b border-border/50 hover:bg-accent/50 transition-colors cursor-pointer"
+                  onClick={() => openStock(item.symbol, item.name)}
+                >
+                  <td className="py-1.5 px-2">
+                    <div className="font-medium">{item.name}</div>
+                    <div className="text-[10px] text-muted-foreground font-mono-data">{item.symbol}</div>
+                  </td>
+                  <td className="py-1.5 px-2 text-muted-foreground">
+                    {item.sector_name || '—'}
+                  </td>
+                  <td className={`text-right py-1.5 px-2 font-mono-data ${item.price ? getChangeColor(item.change || 0) : 'text-muted-foreground'}`}>
+                    {item.price != null ? formatPrice(item.price) : '—'}
+                  </td>
+                  <td className={`text-right py-1.5 px-2 font-mono-data ${item.change_pct ? getChangeColor(item.change_pct) : 'text-muted-foreground'}`}>
+                    {item.change_pct != null ? formatPercent(item.change_pct) : '—'}
+                  </td>
+                  <td className={`text-right py-1.5 px-2 text-muted-foreground`}>
+                    {item.turnover_rate != null ? `${item.turnover_rate.toFixed(2)}%` : '—'}
+                  </td>
+                  <td className="text-right py-1.5 px-2 text-muted-foreground">
+                    {item.turnover != null ? formatNumber(item.turnover) : '—'}
+                  </td>
+                  <td className="text-right py-1.5 px-1">
                     <button
                       disabled={removingId === item.id}
-                      onClick={async () => {
-                        try {
-                          setRemovingId(item.id);
-                          const res = await removeFromWatchlist(item.symbol);
-                          if (res.success) {
-                            toast.success('已移除自选股', { description: `${item.name} (${item.symbol})` });
-                            refetch();
-                          } else {
-                            toast.error('移除自选失败', { description: res.message || '请稍后重试' });
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        (async () => {
+                          try {
+                            setRemovingId(item.id);
+                            const res = await removeFromWatchlist(item.symbol);
+                            if (res.success) {
+                              toast.success('已移除自选股', { description: `${item.name} (${item.symbol})` });
+                              refetch();
+                            } else {
+                              toast.error('移除自选失败', { description: res.message || '请稍后重试' });
+                            }
+                          } catch {
+                            toast.error('移除自选失败', { description: '网络异常，请检查后端服务' });
+                          } finally {
+                            setRemovingId(null);
                           }
-                        } catch {
-                          toast.error('移除自选失败', { description: '网络异常，请检查后端服务' });
-                        } finally {
-                          setRemovingId(null);
-                        }
+                        })();
                       }}
                       className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded hover:bg-muted disabled:opacity-60"
                       title="移除自选股"
