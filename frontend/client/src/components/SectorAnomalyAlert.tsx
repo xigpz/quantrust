@@ -28,7 +28,7 @@ export default function SectorAnomalyAlert({ onClose }: SectorAnomalyAlertProps)
   const prevSectorsRef = useRef<Map<string, number>>(new Map());
 
   // 拖拽状态 - 默认显示在右下角
-  const [position, setPosition] = useState({ x: 20, y: 20 });
+  const [position, setPosition] = useState({ x: 20, y: 80 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const positionStartRef = useRef({ x: 0, y: 0 });
@@ -144,7 +144,7 @@ export default function SectorAnomalyAlert({ onClose }: SectorAnomalyAlertProps)
   return (
     <div
       className="fixed z-40 flex flex-col gap-2 max-w-sm"
-      style={{ left: position.x, top: position.y }}
+      style={{ right: position.x, bottom: position.y }}
     >
       {/* 拖拽手柄 */}
       <div
