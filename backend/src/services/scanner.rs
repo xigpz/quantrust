@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::data::DataProvider;
@@ -80,9 +81,43 @@ impl MarketScanner {
             quotes.dedup_by(|a, b| a.symbol == b.symbol);
         }
 
+        // 5. 获取板块数据（需要在计算热点股票之前获取）
+        let sectors = match self.provider.get_sectors().await {
+            Ok(s) => {
+                *self.cache.sectors.write().await = s.clone();
+                s
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch sectors: {}", e);
+                Vec::new()
+            }
+        };
+
+        // 构建股票到板块的映射（获取热门板块的个股）
+        let mut stock_sector_map: HashMap<String, (String, f64)> = HashMap::new();
+        // 只获取涨幅前10的板块的个股，避免过多API调用
+        let mut top_sectors: Vec<&SectorInfo> = sectors.iter()
+            .filter(|s| s.change_pct > 0.0)
+            .collect();
+        top_sectors.sort_by(|a, b| b.change_pct.partial_cmp(&a.change_pct).unwrap_or(std::cmp::Ordering::Equal));
+        top_sectors.truncate(10);
+
+        for sector in &top_sectors {
+            if let Ok(stocks) = self.provider.get_sector_stocks(&sector.code).await {
+                for stock in stocks.iter().take(50) {
+                    if !stock.name.is_empty() {
+                        stock_sector_map.insert(
+                            stock.name.clone(),
+                            (sector.name.clone(), sector.change_pct),
+                        );
+                    }
+                }
+            }
+        }
+
         if !quotes.is_empty() {
-            // 2. 计算热点股票
-            let hot_stocks = self.hot_ranker.rank(&quotes, 200);
+            // 2. 计算热点股票（传入板块信息）
+            let hot_stocks = self.hot_ranker.rank(&quotes, &stock_sector_map, 200);
             *self.cache.hot_stocks.write().await = hot_stocks;
 
             // 3. 检测异动
@@ -91,11 +126,6 @@ impl MarketScanner {
 
             // 4. 缓存全部行情
             *self.cache.all_quotes.write().await = quotes;
-        }
-
-        // 5. 获取板块数据
-        if let Ok(sectors) = self.provider.get_sectors().await {
-            *self.cache.sectors.write().await = sectors;
         }
 
         // 6. 获取大盘概览
