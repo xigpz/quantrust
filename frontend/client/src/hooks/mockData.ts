@@ -4,8 +4,14 @@
  */
 
 import type {
-  MarketOverview, StockQuote, HotStock, AnomalyStock,
-  SectorInfo, MoneyFlow, IndexQuote
+  MarketOverview,
+  StockQuote,
+  HotStock,
+  AnomalyStock,
+  SectorInfo,
+  MoneyFlow,
+  IndexQuote,
+  SectorIntradayFlowResponse,
 } from './useMarketData';
 
 // Seed random for consistency
@@ -198,6 +204,7 @@ export function generateMockAnomalies(): AnomalyStock[] {
 export function generateMockSectors(): SectorInfo[] {
   return sectorNames.map((name, i) => {
     const changePct = randomFloat(-5, 5);
+    const mainNet = randomFloat(-12, 12);
     return {
       name,
       code: `BK${String(i + 1).padStart(4, '0')}`,
@@ -208,8 +215,61 @@ export function generateMockSectors(): SectorInfo[] {
       stock_count: randomInt(30, 150),
       up_count: changePct > 0 ? randomInt(20, 100) : randomInt(5, 40),
       down_count: changePct < 0 ? randomInt(20, 100) : randomInt(5, 40),
+      main_net_inflow: parseFloat(mainNet.toFixed(2)),
     };
   }).sort((a, b) => b.change_pct - a.change_pct);
+}
+
+const mockSectorFlowNames = [
+  '新能源',
+  '电力',
+  '航天航空',
+  '能源金属',
+  '新能源车',
+  '5G概念',
+  'AI应用',
+  '算力概念',
+  '半导体',
+  '消费电子',
+  '银行',
+  '医药',
+];
+
+export function generateMockSectorIntradayFlow(): SectorIntradayFlowResponse {
+  const times = [
+    '09:30',
+    '10:00',
+    '10:30',
+    '11:00',
+    '11:30',
+    '13:00',
+    '13:30',
+    '14:00',
+    '14:30',
+    '15:00',
+  ];
+  const series = mockSectorFlowNames.map((name, i) => {
+    const sign = i < 4 ? 1 : -1;
+    let v = sign * randomFloat(2, 8);
+    const points = times.map((t) => {
+      v += randomFloat(-4, 4) * 0.35;
+      return { t, v: parseFloat(v.toFixed(2)) };
+    });
+    const last = points[points.length - 1]?.v ?? 0;
+    return {
+      code: `BK${String(i + 100).padStart(4, '0')}`,
+      name,
+      points,
+      last,
+    };
+  });
+  const d = new Date();
+  const trade_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return {
+    trade_date,
+    updated_at: d.toISOString(),
+    series,
+  };
 }
 
 export function generateMockMoneyFlow(): MoneyFlow[] {

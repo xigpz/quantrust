@@ -13,6 +13,7 @@ pub struct Sentiment {
 pub struct AnomalyPrediction {
     pub symbol: String,
     pub name: String,
+    pub change_pct: f64,
     pub pred_type: String,
     pub sentiment: Sentiment,
     pub urgency: String,

@@ -3,18 +3,26 @@ use crate::models::*;
 use super::eastmoney::EastMoneyApi;
 use super::notices;
 use super::news as news_data;
+use super::cls_client::ClsClient;
 use crate::models::intraday::IntradaySeries;
 
 /// 统一数据提供者
 pub struct DataProvider {
     api: EastMoneyApi,
+    cls_client: ClsClient,
 }
 
 impl DataProvider {
     pub fn new() -> Self {
         Self {
             api: EastMoneyApi::new(),
+            cls_client: ClsClient::new(),
         }
+    }
+
+    /// 获取财联社快讯新闻
+    pub async fn get_cls_news(&self, page: u32, page_size: u32) -> Result<Vec<StockNews>> {
+        self.cls_client.get_telegraphs(page, page_size).await
     }
 
     pub async fn get_realtime_quotes(&self, page: u32, page_size: u32) -> Result<Vec<StockQuote>> {

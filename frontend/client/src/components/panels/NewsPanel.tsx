@@ -90,6 +90,13 @@ function formatTime(timeStr: string): string {
   }
 }
 
+function parseTimeMs(timeStr: string): number {
+  if (!timeStr) return 0;
+  const normalized = timeStr.replace('T', ' ').replace(/\.\d+Z$/, '').replace('Z', '');
+  const ms = new Date(normalized).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 // 解析后端返回的新闻数据
 function parseNewsFromApi(data: any[]) {
   return data.map((item: any) => ({
@@ -103,6 +110,38 @@ function parseNewsFromApi(data: any[]) {
     content: '',
     column_name: item.column_name,
   }));
+}
+
+// 解析财联社快讯
+function parseClsNewsFromApi(data: any[]) {
+  return data.map((item: any) => ({
+    art_code: item.id || item.art_code || `${item.title}-${item.pub_time}`,
+    title: item.title,
+    pub_time: item.pub_time,
+    notice_date: item.pub_time,
+    display_time: item.pub_time,
+    source: item.source || '财联社',
+    type: getNewsType(item.category || '', item.title),
+    content: item.content || '',
+    column_name: item.category || '',
+  }));
+}
+
+/** 过滤无效新闻，避免出现空标题/空正文占位卡片 */
+function sanitizeNewsItems(items: any[]) {
+  return items
+    .map((item) => {
+      const title = (item.title || '').trim();
+      const content = (item.content || '').trim();
+      const hasCore = title.length > 0 || content.length > 0;
+      if (!hasCore) return null;
+      return {
+        ...item,
+        title: title || content.slice(0, 48) || '（无标题）',
+        content,
+      };
+    })
+    .filter((x): x is any => x !== null);
 }
 
 function getNewsType(columnName: string, title: string = ''): string {
@@ -203,26 +242,36 @@ export default function NewsPanel() {
   const fetchNews = async () => {
     setLoading(true);
     try {
-      // 从多只股票获取公告
-      const allNotices: any[] = [];
-      for (const symbol of defaultSymbols) {
-        try {
-          const res = await fetch(`${API_BASE}/api/notices/${symbol}?page=1&page_size=10`);
-          const json = await res.json();
-          if (json.success && json.data?.list) {
-            allNotices.push(...parseNewsFromApi(json.data.list));
+      // 优先使用财联社快讯（更新更及时）
+      const clsRes = await fetch(`${API_BASE}/api/cls/news?page=1&page_size=80`);
+      const clsJson = await clsRes.json();
+
+      let merged: any[] = [];
+      if (clsJson.success && clsJson.data?.list?.length) {
+        merged = sanitizeNewsItems(parseClsNewsFromApi(clsJson.data.list));
+      } else {
+        // 回退到多只股票公告
+        const allNotices: any[] = [];
+        for (const symbol of defaultSymbols) {
+          try {
+            const res = await fetch(`${API_BASE}/api/notices/${symbol}?page=1&page_size=10`);
+            const json = await res.json();
+            if (json.success && json.data?.list) {
+              allNotices.push(...parseNewsFromApi(json.data.list));
+            }
+          } catch (e) {
+            console.error(`Failed to fetch notices for ${symbol}:`, e);
           }
-        } catch (e) {
-          console.error(`Failed to fetch notices for ${symbol}:`, e);
         }
+        merged = sanitizeNewsItems(allNotices);
       }
 
-      // 按时间排序
-      allNotices.sort((a, b) => b.pub_time.localeCompare(a.pub_time));
+      // 按真实时间倒序（避免字符串比较导致旧消息排前）
+      merged.sort((a, b) => parseTimeMs(b.pub_time) - parseTimeMs(a.pub_time));
 
-      // 去重
-      const uniqueNotices = allNotices.filter((item, index, self) =>
-        index === self.findIndex((t) => t.title === item.title)
+      // 去重（标题+时间）
+      const uniqueNotices = merged.filter((item, index, self) =>
+        index === self.findIndex((t) => t.title === item.title && t.pub_time === item.pub_time)
       );
 
       const analyzed = uniqueNotices.map(n => ({ ...n, ...analyzeNewsRelation(n.title, n.content || '') }));
@@ -282,6 +331,8 @@ export default function NewsPanel() {
   useEffect(() => {
     fetchNews();
     enableNotifications();
+    const timer = setInterval(fetchNews, 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   const isMonitored = (name: string, type: 'sector' | 'stock') => monitoredItems.some(i => i.name === name && i.type === type);

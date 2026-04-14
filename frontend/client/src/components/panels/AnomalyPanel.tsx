@@ -7,6 +7,7 @@ const API_BASE = '';
 interface AnomalyPrediction {
   symbol: string;
   name: string;
+  change_pct?: number;
   pred_type: string;
   sentiment: {
     score: number;
@@ -96,6 +97,11 @@ export default function AnomalyPanel() {
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">{pred.symbol}</span>
                       <span className="text-sm text-muted-foreground">{pred.name}</span>
+                      {pred.change_pct !== undefined && (
+                        <span className={`text-sm font-medium ${pred.change_pct >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                          {pred.change_pct >= 0 ? '+' : ''}{pred.change_pct.toFixed(2)}%
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">{pred.reason}</div>
                   </div>

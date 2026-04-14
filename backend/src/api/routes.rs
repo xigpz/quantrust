@@ -14,9 +14,11 @@ use crate::services::financial::{DragonTigerService, DragonTigerData, FinancialS
 use crate::services::news_analyzer::{NewsAnalyzer, AnomalyPrediction, Sentiment};
 use crate::services::screener::{ScreenerExecutionResult, ScreenerService};
 use crate::services::ai_pattern::{AIPatternService, PatternResult, ScreenParams};
+use crate::services::python_backtest::run_python_backtest;
 use crate::models::*;
 use crate::db::DbPool;
 use crate::sim::SimState;
+use crate::api::timing_routes::{get_timing_signal, get_intraday_windows, get_annual_windows};
 
 /// 应用运行时配置
 #[derive(Clone, Default)]
@@ -50,6 +52,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/anomalies", get(get_anomalies))
         // 板块行情
         .route("/api/sectors", get(get_sectors))
+        .route("/api/sectors/intraday-flow", get(get_sector_intraday_flow))
         .route("/api/sectors/{code}/stocks", get(get_sector_stocks))
         // 资金流向
         .route("/api/money-flow", get(get_money_flow))
@@ -61,6 +64,8 @@ pub fn create_router(state: AppState) -> Router {
         // 财经新闻
         .route("/api/news/{symbol}", get(get_stock_news))
         .route("/api/news/detail/{news_id}", get(get_news_detail))
+        // 财联社快讯
+        .route("/api/cls/news", get(get_cls_news))
         // 自选股
         .route("/api/watchlist", get(get_watchlist))
         .route("/api/watchlist", post(add_watchlist))
@@ -72,6 +77,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/strategies/{id}", axum::routing::delete(delete_strategy))
         // 回测
         .route("/api/backtest", post(run_backtest))
+        .route("/api/backtest/code", post(run_code_backtest))
         .route("/api/momentum/{symbol}", get(get_momentum))
         .route("/api/backtest/history", get(get_backtest_history))
         // 风控
@@ -110,6 +116,10 @@ pub fn create_router(state: AppState) -> Router {
         // 配置管理
         .route("/api/config", get(get_config))
         .route("/api/config", post(update_config))
+        // 交易时机
+        .route("/api/timing/signal", get(get_timing_signal))
+        .route("/api/timing/intraday", get(get_intraday_windows))
+        .route("/api/timing/annual", get(get_annual_windows))
         .with_state(state)
 }
 
@@ -284,6 +294,14 @@ async fn get_sectors(
     ok_response(sectors)
 }
 
+/// 板块主力净流入分时走势（服务端随行情扫描聚合）
+async fn get_sector_intraday_flow(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<SectorIntradayResponse>> {
+    let intraday = state.cache.sector_intraday.read().await;
+    ok_response(intraday.to_response())
+}
+
 /// 获取板块成分股
 async fn get_sector_stocks(
     State(state): State<AppState>,
@@ -367,6 +385,28 @@ async fn get_news_detail(
 ) -> Json<ApiResponse<StockNews>> {
     match state.provider.get_news_detail(&news_id).await {
         Ok(detail) => ok_response(detail),
+        Err(e) => err_response(&e.to_string()),
+    }
+}
+
+/// 获取财联社快讯新闻
+async fn get_cls_news(
+    State(state): State<AppState>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Json<ApiResponse<StockNewsResponse>> {
+    let page: u32 = params.get("page")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let page_size: u32 = params.get("page_size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+
+    match state.provider.get_cls_news(page, page_size).await {
+        Ok(list) => {
+            let total = list.len() as i32;
+            let list = list;
+            ok_response(StockNewsResponse { list, total })
+        },
         Err(e) => err_response(&e.to_string()),
     }
 }
@@ -646,6 +686,7 @@ async fn get_anomaly_predictions(
         predictions.push(AnomalyPrediction {
             symbol: quote.symbol.clone(),
             name: quote.name.clone(),
+            change_pct: quote.change_pct,
             pred_type: pt,
             sentiment: Sentiment {
                 score: quote.change_pct / 100.0,
@@ -833,6 +874,17 @@ pub struct BacktestRequest {
     pub commission_rate: Option<f64>,
 }
 
+/// 代码回测请求（执行 Python 策略代码）
+#[derive(Deserialize)]
+pub struct CodeBacktestRequest {
+    pub code: String,
+    pub symbol: Option<String>,
+    pub period: Option<String>,
+    pub count: Option<u32>,
+    pub initial_capital: Option<f64>,
+    pub commission_rate: Option<f64>,
+}
+
 /// 执行回测
 async fn run_backtest(
     State(state): State<AppState>,
@@ -892,6 +944,142 @@ async fn run_backtest(
             message: format!("回测失败: {}", e),
         }),
     }
+}
+
+/// 执行代码回测
+async fn run_code_backtest(
+    State(state): State<AppState>,
+    Json(req): Json<CodeBacktestRequest>,
+) -> Json<ApiResponse<Option<BacktestResult>>> {
+    if req.code.trim().is_empty() {
+        return Json(ApiResponse {
+            success: false,
+            data: None,
+            message: "策略代码不能为空".to_string(),
+        });
+    }
+    let symbol = req.symbol.unwrap_or_else(|| "600519.SH".to_string());
+    let period = req.period.unwrap_or_else(|| "1d".to_string());
+    let count = req.count.unwrap_or(500).clamp(50, 2000);
+    let initial_capital = req.initial_capital.unwrap_or(100000.0);
+    if initial_capital <= 0.0 {
+        return Json(ApiResponse {
+            success: false,
+            data: None,
+            message: "初始资金必须大于0".to_string(),
+        });
+    }
+    let commission_rate = req.commission_rate.unwrap_or(0.0003).max(0.0).min(0.05);
+
+    let candles = match state.provider.get_candles(&symbol, &period, count).await {
+        Ok(c) => c,
+        Err(e) => {
+            return Json(ApiResponse {
+                success: false,
+                data: None,
+                message: format!("获取K线数据失败: {}", e),
+            });
+        }
+    };
+
+    if candles.len() < 2 {
+        return Json(ApiResponse {
+            success: false,
+            data: None,
+            message: "K线数据不足，无法回测".to_string(),
+        });
+    }
+
+    let py_result = match run_python_backtest(
+        &req.code,
+        &symbol,
+        &candles,
+        initial_capital,
+        commission_rate,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return Json(ApiResponse {
+                success: false,
+                data: None,
+                message: format!("代码回测失败: {}", e),
+            });
+        }
+    };
+
+    let result = BacktestResult {
+        id: uuid::Uuid::new_v4().to_string(),
+        strategy_id: "python_code".to_string(),
+        params: BacktestParams {
+            strategy_id: "python_code".to_string(),
+            symbol: symbol.clone(),
+            start_date: candles
+                .first()
+                .map(|c| c.timestamp.clone())
+                .unwrap_or_default(),
+            end_date: candles
+                .last()
+                .map(|c| c.timestamp.clone())
+                .unwrap_or_default(),
+            initial_capital,
+            commission_rate,
+            slippage: 0.0,
+        },
+        kpis: BacktestKpis {
+            total_return: py_result.kpis.total_return,
+            annual_return: py_result.kpis.annual_return,
+            max_drawdown: py_result.kpis.max_drawdown,
+            sharpe_ratio: py_result.kpis.sharpe_ratio,
+            sortino_ratio: py_result.kpis.sortino_ratio,
+            win_rate: py_result.kpis.win_rate,
+            profit_loss_ratio: py_result.kpis.profit_loss_ratio,
+            total_trades: py_result.kpis.total_trades,
+            winning_trades: py_result.kpis.winning_trades,
+            losing_trades: py_result.kpis.losing_trades,
+        },
+        trades: py_result
+            .trades
+            .into_iter()
+            .map(|t| BacktestTrade {
+                timestamp: t.timestamp,
+                symbol: t.symbol,
+                direction: t.direction,
+                price: t.price,
+                quantity: t.quantity,
+                commission: t.commission,
+                pnl: t.pnl,
+            })
+            .collect(),
+        equity_curve: py_result
+            .equity_curve
+            .into_iter()
+            .map(|p| EquityPoint {
+                timestamp: p.timestamp,
+                equity: p.equity,
+                benchmark: p.benchmark,
+            })
+            .collect(),
+        created_at: chrono::Utc::now(),
+    };
+
+    // 保存到数据库，便于历史查看
+    if let Ok(db) = state.db.lock() {
+        let _ = db.execute(
+            "INSERT INTO backtest_results (id, strategy_id, params, kpis, trades, equity_curve) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                result.id,
+                result.strategy_id,
+                serde_json::to_string(&result.params).unwrap_or_default(),
+                serde_json::to_string(&result.kpis).unwrap_or_default(),
+                serde_json::to_string(&result.trades).unwrap_or_default(),
+                serde_json::to_string(&result.equity_curve).unwrap_or_default(),
+            ],
+        );
+    }
+
+    ok_response(Some(result))
 }
 
 /// 获取回测历史

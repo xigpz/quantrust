@@ -15,9 +15,12 @@ use tower_http::compression::CompressionLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::routes::{AppState, create_router};
+use api::create_report_router;
+use api::{create_global_router, GlobalState};
 use auth::create_auth_router;
 use sim::create_sim_router;
 use data::DataProvider;
+use data::global_market::GlobalMarketService;
 use db::init_db;
 use services::scanner::MarketScanner;
 
@@ -75,11 +78,18 @@ async fn main() -> anyhow::Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Create global market state
+    let global_state = GlobalState {
+        market_service: Arc::new(tokio::sync::RwLock::new(GlobalMarketService::new())),
+    };
+
     let app = Router::new()
         .route("/api/health", get(health_check))
         .merge(create_router(state.clone()))
         .merge(create_auth_router(state.clone()))
         .merge(create_sim_router(state.clone()))
+        .merge(create_report_router(state.db.clone()))
+        .merge(create_global_router(global_state))
         .route("/ws", axum::routing::get(ws::ws_handler).with_state(state))
         .layer(cors)
         .layer(TraceLayer::new_for_http())

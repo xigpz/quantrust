@@ -98,6 +98,12 @@ function vitePluginManusDebugCollector(): Plugin {
     },
 
     configureServer(server: ViteDevServer) {
+      // Provide a noop collector script so index injection won't 404.
+      server.middlewares.use("/__manus__/debug-collector.js", (_req, res) => {
+        res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+        res.end("window.__MANUS_DEBUG_COLLECTOR__ = window.__MANUS_DEBUG_COLLECTOR__ || { enabled: false };");
+      });
+
       // POST /__manus__/logs: Browser sends logs (written directly to files)
       server.middlewares.use("/__manus__/logs", (req, res, next) => {
         if (req.method !== "POST") {

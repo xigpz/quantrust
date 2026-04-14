@@ -1,4 +1,4 @@
-﻿pub mod anomaly;
+pub mod anomaly;
 pub mod news_analyzer;
 pub mod hot_stocks;
 pub mod backtest;
@@ -11,6 +11,18 @@ pub mod notification;
 pub mod trading;
 pub mod screener;
 pub mod ai_pattern;
+pub mod virtual_trading;
+pub mod report_generator;
+pub mod agent_core;
+pub mod agent_perception;
+pub mod agent_reasoning;
+pub mod agent_memory;
+pub mod agent_execution;
+pub mod autonomous_trader;
+pub mod after_hours_monitor;
+pub mod auto_research;
+pub mod timing_optimizer;
+pub mod python_backtest;
 
 pub use anomaly::AnomalyDetector;
 pub use news_analyzer::{NewsAnalyzer, Sentiment, AnomalyPrediction};
@@ -25,3 +37,9 @@ pub use notification::{NotificationService, AlertManager, Notification, Notifica
 pub use trading::{TradingEngine, Broker, Order, Position, Account, FutuConfig, OrderType, Direction, OrderStatus};
 pub use screener::ScreenerService;
 pub use ai_pattern::{AIPatternService, PatternResult, PatternType, BreakoutDirection, TrendType, ScreenParams};
+pub use virtual_trading::{VirtualAccount, VirtualPosition, VirtualTrade};
+pub use report_generator::{ReportGenerator, DailyTradingReport, WeeklyReport, MonthlyReport, format_report_markdown, ReportConfig};
+pub use after_hours_monitor::{AfterHoursMonitor, Alert, AlertSeverity, AlertType, ExternalMarketAnalysis};
+pub use auto_research::{AutoResearch, ResearchReport, ReportType, format_report_markdown as format_research_markdown};
+pub use timing_optimizer::TimingOptimizer;
+pub use python_backtest::run_python_backtest;

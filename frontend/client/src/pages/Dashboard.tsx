@@ -17,6 +17,7 @@ import DragonTigerPanel from '@/components/panels/DragonTigerPanel';
 import FactorPanel from '@/components/panels/FactorPanel';
 import ScreenerPanel from '@/components/panels/ScreenerPanel';
 import SectorsPanel from '@/components/panels/SectorsPanel';
+import SectorIntradayFlowPanel from '@/components/panels/SectorIntradayFlowPanel';
 import MoneyFlowPanel from '@/components/panels/MoneyFlowPanel';
 import LimitUpPanel from '@/components/panels/LimitUpPanel';
 import WatchlistPanel from '@/components/panels/WatchlistPanel';
@@ -32,10 +33,13 @@ import StrategyPanel from '@/components/panels/StrategyPanel';
 import NewsPanel from '@/components/panels/NewsPanel';
 import SimTrading from './SimTrading';
 import PortfolioPanel from '@/components/panels/PortfolioPanel';
+import TimingOptimizerPanel from '@/components/panels/TimingOptimizerPanel';
 import SettingsPanel from '@/components/panels/SettingsPanel';
 import StockDetailModal from '@/components/StockDetailModal';
 import MobileNav from '@/components/MobileNav';
+import GlobalIndicesBar from '@/components/GlobalIndicesBar';
 import SectorAnomalyAlert from '@/components/SectorAnomalyAlert';
+import MarketCommandCenterPanel from '@/components/panels/MarketCommandCenterPanel';
 import { useWebSocket } from '@/hooks/useMarketData';
 
 // Context: 让子面板可以触发股票详情弹窗
@@ -45,6 +49,8 @@ interface StockClickCtx {
 }
 export const StockClickContext = createContext<StockClickCtx>({ openStock: () => {}, switchTab: () => {} });
 export function useStockClick() { return useContext(StockClickContext); }
+
+const DASHBOARD_ACTIVE_TAB_KEY = 'quantrust_dashboard_active_tab';
 
 const panelMap: Record<TabId, React.ComponentType> = {
   overview: OverviewPanel,
@@ -60,6 +66,7 @@ const panelMap: Record<TabId, React.ComponentType> = {
   factor: FactorPanel,
   screener: ScreenerPanel,
   sectors: SectorsPanel,
+  sectorflow: SectorIntradayFlowPanel,
   flow: MoneyFlowPanel,
   limitup: LimitUpPanel,
   watchlist: WatchlistPanel,
@@ -73,12 +80,23 @@ const panelMap: Record<TabId, React.ComponentType> = {
   visual: VisualStrategyEditor,
   market: StrategyMarketPanel,
   aipattern: AIPatternPanel,
+  timing: TimingOptimizerPanel,
+  command: MarketCommandCenterPanel,
 };
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const saved = localStorage.getItem(DASHBOARD_ACTIVE_TAB_KEY) as TabId | null;
+    if (saved && saved in panelMap) return saved;
+    return 'overview';
+  });
   const { connected, isDemo } = useWebSocket();
   const { refreshInterval, setRefreshInterval } = useRefreshInterval();
+
+  const handleTabChange = (tab: TabId) => {
+    setActiveTab(tab);
+    localStorage.setItem(DASHBOARD_ACTIVE_TAB_KEY, tab);
+  };
 
   // 股票详情弹窗状态
   const [selectedStock, setSelectedStock] = useState<{ symbol: string; name?: string } | null>(null);
@@ -86,24 +104,27 @@ export default function Dashboard() {
   const ActivePanel = panelMap[activeTab];
 
   return (
-    <StockClickContext.Provider value={{ openStock: (symbol, name) => setSelectedStock({ symbol, name }), switchTab: setActiveTab }}>
+    <StockClickContext.Provider value={{ openStock: (symbol, name) => setSelectedStock({ symbol, name }), switchTab: handleTabChange }}>
       <div className="h-screen flex flex-col bg-background overflow-hidden">
         {/* Top Market Bar - 移动端隐藏 */}
         <MarketBar wsConnected={connected} isDemo={isDemo} className="hidden md:flex" />
+
+        {/* Global Indices Bar - 全球指数、黄金、石油 */}
+        <GlobalIndicesBar className="hidden md:flex" />
 
         {/* Main Content */}
         <div className="flex flex-1 overflow-hidden">
           {/* Sidebar - 移动端可折叠 */}
           <Sidebar 
             activeTab={activeTab} 
-            onTabChange={setActiveTab} 
+            onTabChange={handleTabChange} 
             className="hidden md:flex w-44 shrink-0"
           />
           
           {/* 移动端底部导航 */}
           <MobileNav 
             activeTab={activeTab} 
-            onTabChange={setActiveTab} 
+            onTabChange={handleTabChange} 
             className="md:hidden fixed bottom-0 left-0 right-0 z-50"
           />
 

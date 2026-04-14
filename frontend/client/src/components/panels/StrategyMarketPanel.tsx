@@ -3,6 +3,7 @@
  * 浏览、使用、分享量化策略
  */
 import { useState, useEffect } from 'react';
+import { useLocation } from 'wouter';
 import { 
   Search, 
   Download, 
@@ -37,6 +38,17 @@ interface StrategyTemplate {
     win_rate: number;
     max_drawdown: number;
   };
+}
+
+interface TemplateBacktestKpis {
+  total_return: number;
+  win_rate: number;
+  max_drawdown: number;
+  total_trades: number;
+}
+
+interface TemplateBacktestResult {
+  kpis: TemplateBacktestKpis;
 }
 
 // 内置策略模板
@@ -270,11 +282,15 @@ function formatPercent(value: number): string {
 }
 
 export default function StrategyMarketPanel() {
+  const [, navigate] = useLocation();
   const [templates, setTemplates] = useState<StrategyTemplate[]>(BUILT_IN_TEMPLATES);
   const [selectedCategory, setSelectedCategory] = useState('全部');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<StrategyTemplate | null>(null);
   const [loading, setLoading] = useState(false);
+  const [runningBacktest, setRunningBacktest] = useState(false);
+  const [backtestResult, setBacktestResult] = useState<TemplateBacktestResult | null>(null);
+  const [backtestError, setBacktestError] = useState<string | null>(null);
 
   const filteredTemplates = templates.filter(t => {
     const matchCategory = selectedCategory === '全部' || t.category === selectedCategory;
@@ -283,15 +299,78 @@ export default function StrategyMarketPanel() {
   });
 
   const handleUseTemplate = (template: StrategyTemplate) => {
-    // TODO: 跳转到策略编辑器并加载模板
+    localStorage.setItem(
+      'quantrust_strategy_ide_draft',
+      JSON.stringify({
+        name: template.name,
+        description: template.description,
+        code: template.code,
+        language: template.language || 'python',
+        source: 'strategy-market',
+        templateId: template.id,
+        injectedAt: Date.now(),
+      }),
+    );
     toast.success(`已加载策略: ${template.name}`, {
-      description: '跳转到策略编辑器...',
+      description: '正在跳转策略IDE...',
     });
+    navigate('/strategy');
   };
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
     toast.success('代码已复制到剪贴板');
+  };
+
+  const getBacktestParamsByTemplate = (template: StrategyTemplate) => {
+    switch (template.id) {
+      case 'ma-cross':
+        return { symbol: '600519.SH', short_ma: 5, long_ma: 20 };
+      case 'rsi-reversal':
+        return { symbol: '000001.SZ', short_ma: 6, long_ma: 24 };
+      case 'macd-trend':
+        return { symbol: '300750.SZ', short_ma: 8, long_ma: 26 };
+      case 'breakout-momentum':
+        return { symbol: '000300.SH', short_ma: 10, long_ma: 30 };
+      case 'value-screening':
+        return { symbol: '601318.SH', short_ma: 12, long_ma: 40 };
+      case 'grid-trading':
+        return { symbol: '000001.SZ', short_ma: 4, long_ma: 16 };
+      default:
+        return { symbol: '600519.SH', short_ma: 5, long_ma: 20 };
+    }
+  };
+
+  const runTemplateBacktest = async (template: StrategyTemplate) => {
+    setRunningBacktest(true);
+    setBacktestError(null);
+    setBacktestResult(null);
+    try {
+      const p = getBacktestParamsByTemplate(template);
+      const res = await fetch('/api/backtest/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: template.code,
+          symbol: p.symbol,
+          period: '1d',
+          count: 500,
+          initial_capital: 100000,
+          commission_rate: 0.0003,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setBacktestResult(json.data as TemplateBacktestResult);
+        toast.success('模板回测完成');
+      } else {
+        setBacktestError(json.message || '回测失败');
+      }
+    } catch (e) {
+      setBacktestError(e instanceof Error ? e.message : '网络错误');
+    } finally {
+      setRunningBacktest(false);
+    }
   };
 
   return (
@@ -436,6 +515,14 @@ export default function StrategyMarketPanel() {
                   使用模板
                 </button>
                 <button
+                  onClick={() => runTemplateBacktest(selectedTemplate)}
+                  disabled={runningBacktest}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500 disabled:opacity-60"
+                >
+                  <TrendingUp className="w-3 h-3" />
+                  {runningBacktest ? '回测中...' : '运行预览'}
+                </button>
+                <button
                   onClick={() => handleCopyCode(selectedTemplate.code)}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs bg-secondary text-secondary-foreground rounded hover:bg-secondary/80"
                 >
@@ -443,10 +530,43 @@ export default function StrategyMarketPanel() {
                   复制代码
                 </button>
               </div>
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                注：当前为 Python 代码真实回测预览（调用 /api/backtest/code）。
+              </p>
             </div>
             
             <ScrollArea className="flex-1">
               <div className="p-4">
+                <div className="mb-3 rounded border border-border bg-background/40 p-3">
+                  <div className="text-[11px] font-medium mb-2">模板回测预览</div>
+                  {backtestError ? (
+                    <div className="text-[10px] text-red-400">{backtestError}</div>
+                  ) : backtestResult ? (
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      <div className="rounded bg-card/60 p-2">
+                        <div className="text-muted-foreground">总收益率</div>
+                        <div className={backtestResult.kpis.total_return >= 0 ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                          {formatPercent(backtestResult.kpis.total_return)}
+                        </div>
+                      </div>
+                      <div className="rounded bg-card/60 p-2">
+                        <div className="text-muted-foreground">胜率</div>
+                        <div className="font-semibold">{backtestResult.kpis.win_rate.toFixed(1)}%</div>
+                      </div>
+                      <div className="rounded bg-card/60 p-2">
+                        <div className="text-muted-foreground">最大回撤</div>
+                        <div className="text-red-400 font-semibold">{backtestResult.kpis.max_drawdown.toFixed(2)}%</div>
+                      </div>
+                      <div className="rounded bg-card/60 p-2">
+                        <div className="text-muted-foreground">交易次数</div>
+                        <div className="font-semibold">{backtestResult.kpis.total_trades}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-muted-foreground">点击“运行预览”查看模板效果。</div>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-1.5 mb-2">
                   <Code className="w-4 h-4 text-muted-foreground" />
                   <span className="text-xs font-medium">策略代码</span>

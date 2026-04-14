@@ -53,8 +53,29 @@ export default function StrategyIDE() {
   const [code, setCode] = useState(DEFAULT_CODE);
   const [name, setName] = useState('新策略');
   const [description, setDescription] = useState('');
+  const [symbol, setSymbol] = useState('600519.SH');
+  const [capital, setCapital] = useState(100000);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState('');
+
+  useEffect(() => {
+    const raw = localStorage.getItem('quantrust_strategy_ide_draft');
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as {
+        name?: string;
+        description?: string;
+        code?: string;
+      };
+      if (draft.name) setName(draft.name);
+      if (typeof draft.description === 'string') setDescription(draft.description);
+      if (draft.code) setCode(draft.code);
+      setOutput('已从模板市场加载策略代码，可直接保存或运行回测。');
+      localStorage.removeItem('quantrust_strategy_ide_draft');
+    } catch {
+      localStorage.removeItem('quantrust_strategy_ide_draft');
+    }
+  }, []);
 
   // 加载策略列表
   useEffect(() => {
@@ -89,25 +110,40 @@ export default function StrategyIDE() {
 
   // 运行回测
   const runBacktest = async () => {
+    if (!symbol.trim()) {
+      setOutput('回测失败: 请输入有效标的代码');
+      return;
+    }
+    if (!capital || capital <= 0) {
+      setOutput('回测失败: 初始资金必须大于 0');
+      return;
+    }
     setRunning(true);
     setOutput('正在运行回测...');
-    
-    const res = await fetch('/api/backtest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        code, 
-        params: { start_date: '2024-01-01', end_date: '2024-12-31', capital: 100000 }
-      })
-    });
-    
-    const data = await res.json();
-    setRunning(false);
-    
-    if (data.success) {
-      setOutput(JSON.stringify(data.data, null, 2));
-    } else {
-      setOutput('回测失败: ' + data.message);
+
+    try {
+      const res = await fetch('/api/backtest/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          code,
+          symbol: symbol.trim(),
+          initial_capital: capital,
+          period: '1d',
+          count: 500,
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setOutput(JSON.stringify(data.data, null, 2));
+      } else {
+        setOutput('回测失败: ' + data.message);
+      }
+    } catch (e) {
+      setOutput(`回测失败: ${e instanceof Error ? e.message : '网络异常'}`);
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -152,6 +188,20 @@ export default function StrategyIDE() {
             onChange={e => setDescription(e.target.value)}
             placeholder="策略描述"
             className="flex-1 bg-gray-800 text-white px-4 py-2 rounded"
+          />
+          <input
+            type="text"
+            value={symbol}
+            onChange={e => setSymbol(e.target.value)}
+            placeholder="回测标的，如 600519.SH"
+            className="w-52 bg-gray-800 text-white px-4 py-2 rounded"
+          />
+          <input
+            type="number"
+            value={capital}
+            onChange={e => setCapital(Number(e.target.value) || 0)}
+            placeholder="初始资金"
+            className="w-40 bg-gray-800 text-white px-4 py-2 rounded"
           />
         </div>
         

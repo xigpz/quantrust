@@ -498,7 +498,7 @@ impl EastMoneyApi {
         let url = "https://82.push2delay.eastmoney.com/api/qt/clist/get?\
             pn=1&pz=50&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281\
             &fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!50\
-            &fields=f2,f3,f4,f8,f12,f14,f104,f105,f128,f136,f140";
+            &fields=f2,f3,f4,f8,f12,f14,f62,f104,f105,f128,f136,f140";
 
         let resp = self.fetch_json(url).await?;
         let mut sectors = Vec::new();
@@ -521,6 +521,7 @@ impl EastMoneyApi {
                         stock_count: item["f104"].as_i64().unwrap_or(0) as i32 + item["f105"].as_i64().unwrap_or(0) as i32,
                         up_count: item["f104"].as_i64().unwrap_or(0) as i32,
                         down_count: item["f105"].as_i64().unwrap_or(0) as i32,
+                        main_net_inflow: item["f62"].as_f64().unwrap_or(0.0) / 100_000_000.0,
                     });
                 }
             }
@@ -535,7 +536,7 @@ impl EastMoneyApi {
         let url = "https://82.push2delay.eastmoney.com/api/qt/clist/get?\
             pn=1&pz=100&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281\
             &fltt=2&invt=2&fid=f3&fs=m:90+t:3+f:!50\
-            &fields=f2,f3,f4,f8,f12,f14,f104,f105,f128,f136,f140";
+            &fields=f2,f3,f4,f8,f12,f14,f62,f104,f105,f128,f136,f140";
 
         let resp = self.fetch_json(url).await?;
         let mut sectors = Vec::new();
@@ -558,6 +559,7 @@ impl EastMoneyApi {
                         stock_count: item["f104"].as_i64().unwrap_or(0) as i32 + item["f105"].as_i64().unwrap_or(0) as i32,
                         up_count: item["f104"].as_i64().unwrap_or(0) as i32,
                         down_count: item["f105"].as_i64().unwrap_or(0) as i32,
+                        main_net_inflow: item["f62"].as_f64().unwrap_or(0.0) / 100_000_000.0,
                     });
                 }
             }

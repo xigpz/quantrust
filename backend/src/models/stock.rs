@@ -64,6 +64,33 @@ pub struct SectorInfo {
     pub stock_count: i32,
     pub up_count: i32,
     pub down_count: i32,
+    /// 主力净流入（亿元），来自东方财富 f62
+    #[serde(default)]
+    pub main_net_inflow: f64,
+}
+
+/// 板块分时资金流曲线上的一个点
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SectorIntradayPoint {
+    pub t: String,
+    pub v: f64,
+}
+
+/// 单板块当日累计采样序列（随行情扫描追加）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SectorIntradaySeries {
+    pub code: String,
+    pub name: String,
+    pub points: Vec<SectorIntradayPoint>,
+    pub last: f64,
+}
+
+/// 多板块分时主力净流入走势（服务端内存聚合）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SectorIntradayResponse {
+    pub trade_date: String,
+    pub updated_at: String,
+    pub series: Vec<SectorIntradaySeries>,
 }
 
 /// 热点股票
@@ -163,6 +190,86 @@ pub struct IndexQuote {
     pub change_pct: f64,
     pub volume: f64,
     pub turnover: f64,
+}
+
+/// 美股行情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsStockQuote {
+    pub symbol: String,
+    pub name: String,
+    pub price: f64,
+    pub change: f64,
+    pub change_pct: f64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub pre_close: f64,
+    pub volume: f64,
+    pub turnover: f64,
+    pub market_cap: f64,
+    pub pe_ratio: f64,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// 美股指数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsIndex {
+    pub symbol: String,
+    pub name: String,
+    pub price: f64,
+    pub change: f64,
+    pub change_pct: f64,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// 港股行情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HkStockQuote {
+    pub symbol: String,
+    pub name: String,
+    pub price: f64,
+    pub change: f64,
+    pub change_pct: f64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub pre_close: f64,
+    pub volume: f64,
+    pub turnover: f64,
+    pub market_cap: f64,
+    pub pe_ratio: f64,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// 大宗商品数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommodityData {
+    pub name: String,
+    pub symbol: String,
+    pub price: f64,
+    pub change: f64,
+    pub change_pct: f64,
+    pub unit: String,
+}
+
+/// 外汇数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForexData {
+    pub pair: String,
+    pub price: f64,
+    pub change: f64,
+    pub change_pct: f64,
+}
+
+/// 加密货币数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CryptoData {
+    pub symbol: String,
+    pub name: String,
+    pub price: f64,
+    pub change_24h: f64,
+    pub market_cap: String,
+    pub volume_24h: String,
 }
 
 /// 资金流向

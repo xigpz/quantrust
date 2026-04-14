@@ -1,7 +1,9 @@
-﻿use anyhow::Result;
+use anyhow::Result;
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+
+pub mod autonomous_trading;
 
 pub type DbPool = Arc<Mutex<Connection>>;
 
