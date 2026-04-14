@@ -1,0 +1,77 @@
+[     131ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/__manus__/debug-collector.js:0
+[    2302ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/favicon.ico:0
+[   10454ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/commodities:0
+[   10455ms] [ERROR] 加载商品数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCommodities (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:57:30)
+    at async Promise.all (index 1)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[   10456ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/crypto:0
+[   10456ms] [ERROR] 加载加密货币失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCrypto (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:79:30)
+    at async Promise.all (index 3)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[   10457ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/forex:0
+[   10457ms] [ERROR] 加载外汇数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadForex (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:68:30)
+    at async Promise.all (index 2)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[   40431ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/commodities:0
+[   40431ms] [ERROR] 加载商品数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCommodities (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:57:30)
+    at async Promise.all (index 1)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[   40432ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/forex:0
+[   40432ms] [ERROR] 加载外汇数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadForex (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:68:30)
+    at async Promise.all (index 2)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[   40433ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/crypto:0
+[   40433ms] [ERROR] 加载加密货币失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCrypto (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:79:30)
+    at async Promise.all (index 3)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[   70435ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/commodities:0
+[   70436ms] [ERROR] 加载商品数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCommodities (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:57:30)
+    at async Promise.all (index 1)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[   70436ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/forex:0
+[   70436ms] [ERROR] 加载外汇数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadForex (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:68:30)
+    at async Promise.all (index 2)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[   70436ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/crypto:0
+[   70437ms] [ERROR] 加载加密货币失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCrypto (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:79:30)
+    at async Promise.all (index 3)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[  100445ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/commodities:0
+[  100446ms] [ERROR] 加载商品数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCommodities (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:57:30)
+    at async Promise.all (index 1)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[  100447ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/forex:0
+[  100448ms] [ERROR] 加载外汇数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadForex (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:68:30)
+    at async Promise.all (index 2)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[  100448ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/crypto:0
+[  100449ms] [ERROR] 加载加密货币失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCrypto (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:79:30)
+    at async Promise.all (index 3)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[  130435ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/commodities:0
+[  130435ms] [ERROR] 加载商品数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCommodities (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:57:30)
+    at async Promise.all (index 1)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[  130436ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/forex:0
+[  130436ms] [ERROR] 加载外汇数据失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadForex (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:68:30)
+    at async Promise.all (index 2)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70
+[  130436ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/api/global/crypto:0
+[  130436ms] [ERROR] 加载加密货币失败 SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at loadCrypto (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:79:30)
+    at async Promise.all (index 3)
+    at async refreshAll (http://localhost:3000/src/components/panels/MarketCommandCenterPanel.tsx:174:7) @ http://localhost:3000/:70

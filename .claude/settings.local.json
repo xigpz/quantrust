@@ -7,7 +7,21 @@
       "Bash(tasklist:*)",
       "Bash(taskkill:*)",
       "Bash(curl:*)",
-      "Bash(pnpm tsc:*)"
+      "Bash(pnpm tsc:*)",
+      "Bash(cargo check:*)",
+      "Bash(ls F:/my-cursor-project/quantrust/backend/src/services/*.rs)",
+      "Bash(ls F:/my-cursor-project/quantrust/backend/src/db/*.rs)",
+      "Bash(ls F:/my-cursor-project/quantrust/backend/src/models/*.rs)",
+      "Bash(ls:*)",
+      "Bash(grep -l \"LimitUpHistory\\\\|ConsecutiveLimitUp\" F:/my-cursor-project/quantrust/backend/src/models/*.rs)",
+      "Bash(grep -l \"struct LimitUpHistory\\\\|struct ConsecutiveLimitUp\\\\|struct StockQuote\" F:/my-cursor-project/quantrust/backend/src/models/*.rs)",
+      "Bash(npm run:*)",
+      "mcp__MiniMax__understand_image",
+      "Bash(pnpm build:*)",
+      "mcp__MiniMax__web_search",
+      "Bash(pnpm dev:*)",
+      "Bash(RUST_LOG=quantrust_server=info ./target/release/quantrust-server.exe)",
+      "Bash(python3 -m json.tool)"
     ]
   }
 }
